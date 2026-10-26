@@ -164,7 +164,7 @@ function cards() {
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : esc(p.error)}</div>
       <div class="row"><div><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div title="Local and remote have split"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : `<div><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div><b>${c.prs}</b><small>Open PRs</small></div></div>
-      ${c.unpushed && !diverged(p) ? `<div class="tools" style="margin:10px 0 0"><button class="rbtn" style="margin:0" data-push="${esc(p.key)}">Push ${c.unpushed} commit${c.unpushed > 1 ? "s" : ""}</button><span class="note" data-pushmsg="${esc(p.key)}"></span></div>` : ""}
+      ${p.git ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
 }
@@ -174,21 +174,42 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { const b = e.target.closest("[data-push]"); if (b) { push(b); return; } const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
-$("#cards").onkeydown = (e) => { if (e.target.closest("[data-push]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
+$("#cards").onclick = (e) => { const b = e.target.closest("[data-git]"); if (b) { gitAction(b); return; } const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
+$("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
-// Push runs a plain `git push` of the current branch to its upstream on the local server; never a force push.
-async function push(btn) {
-  const p = DATA.projects.find((x) => x.key === btn.dataset.push), msg = document.querySelector(`[data-pushmsg="${btn.dataset.push}"]`);
-  if (!confirm(`Push ${p.git.unpushed.length} commit(s) on ${p.git.branch} to ${p.git.upstream} for ${p.key}?\n\n${p.git.unpushed.join("\n")}`)) return;
-  if (location.protocol !== "http:") { msg.textContent = "Pushing needs the local server. Double-click refresh.cmd, then try again."; return; }
-  btn.disabled = true; btn.textContent = "Pushing...";
+// Commit, Push and Commit & push on every card; a button is greyed out (with the reason on hover) when it has nothing to do.
+// Push is a plain `git push` to the upstream, never a force push, so it is off when the branch is behind or has diverged.
+// State lives here, not in the DOM, because cards() redraws every few seconds.
+const gitBusy = {}, gitNote = {};
+function gitButtons(p, c) {
+  const pushBlock = diverged(p) ? "Local and remote have diverged. Pull and merge first." : p.git.behind ? "The remote has newer commits. Pull first." : "";
+  const btn = (act, label, why) => `<button class="${why ? "ibtn" : "rbtn"}" style="margin:0" data-git="${act}" data-key="${esc(p.key)}" ${why || gitBusy[p.key] ? "disabled" : ""} ${why ? `title="${esc(why)}"` : ""}>${label}</button>`;
+  const note = gitNote[p.key];
+  return `<div class="tools" style="margin:10px 0 0">
+    ${btn("commit", "Commit", c.uncommitted ? "" : "Nothing to commit")}
+    ${btn("push", "Push", pushBlock || (c.unpushed ? "" : "Nothing to push"))}
+    ${btn("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "Nothing to commit"))}
+  </div>${note ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+}
+async function gitAction(btn) {
+  const p = DATA.projects.find((x) => x.key === btn.dataset.key), act = btn.dataset.git, g = p.git;
+  const say = (text, bad) => { gitNote[p.key] = { text, bad }; cards(); };
+  const files = g.files.map((f) => `${f.kind}: ${f.path}`), list = (a) => a.slice(0, 15).join("\n") + (a.length > 15 ? `\n...and ${a.length - 15} more` : "");
+  let message = "";
+  if (act !== "push") {
+    message = prompt(`${act === "both" ? "Commit and push" : "Commit"} all ${files.length} changed file(s) in ${p.key} on ${g.branch}:\n\n${list(files)}\n\nCommit message:`, `Update ${files.length} file${files.length > 1 ? "s" : ""}`);
+    if (message === null) return;
+    if (!message.trim()) { say("A commit message is needed.", true); return; }
+  } else if (!confirm(`Push ${g.unpushed.length} commit(s) on ${g.branch} to ${g.upstream || "origin"} for ${p.key}?\n\n${list(g.unpushed)}`)) return;
+  if (location.protocol !== "http:") { say("This needs the local server. Double-click refresh.cmd, then try again.", true); return; }
+  gitBusy[p.key] = true;
+  say(act === "commit" ? "Committing..." : act === "push" ? "Pushing..." : "Committing and pushing...");
   try {
-    const r = await fetch("/push/" + encodeURIComponent(p.key), { method: "POST" });
+    const r = await fetch("/git/" + encodeURIComponent(p.key), { method: "POST", body: JSON.stringify({ action: act, message }) });
     const text = await r.text();
     if (!r.ok) throw new Error(text);
     location.reload(); // the server rebuilt the data
-  } catch (err) { btn.disabled = false; btn.textContent = "Push"; msg.classList.add("bad"); msg.textContent = "Push failed: " + err.message; }
+  } catch (err) { gitBusy[p.key] = false; say("Failed: " + err.message, true); }
 }
 
 // Selecting a project opens it over the whole window and asks the browser for real full screen too.

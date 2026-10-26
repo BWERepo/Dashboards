@@ -68,6 +68,10 @@ function runClaude(key, prompt, { resume, allow = [], kind } = {}) {
 // Replies speak for the user (to Claude, or as a GitHub comment), so only this page may send them: any other
 // site open in the browser could otherwise POST here.
 const ownPage = (req) => !req.headers.origin || /^http:\/\/(127\.0\.0\.1|localhost):8788$/.test(req.headers.origin);
+// git output for both streams (push reports on stderr); rejects with git's own message.
+const git = (dir, ...args) => new Promise((resolve, reject) => execFile("git", ["-C", dir, ...args], { windowsHide: true }, (err, out, errOut) =>
+  err ? reject(new Error(String(errOut || out || err.message).trim())) : resolve(String(out + errOut).trim())));
+const SECRETISH = /(^|\/)(\.env(\..*)?|\.dev\.vars|id_rsa.*|.*\.(pem|key|p12|pfx)|credentials.*|secrets?\.(json|ya?ml|txt))$/i;
 const readBody = (req) => new Promise((resolve) => { let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => resolve(b)); });
 
 const server = createServer(async (req, res) => {
@@ -116,15 +120,31 @@ const server = createServer(async (req, res) => {
     child.stdin.end(text);
     return;
   }
-  // Push the project's current branch to its upstream. A plain push: if the remote has moved on, git refuses and says why.
-  const pk = req.method === "POST" && req.url.startsWith("/push/") ? decodeURIComponent(req.url.slice(6)) : "";
-  if (byKey(pk)) {
+  // Commit everything that is changed, push the current branch, or both. Push is a plain push (never forced): if the
+  // remote has moved on, git refuses and says why. Files that look like secrets are never committed.
+  const gk2 = req.method === "POST" && req.url.startsWith("/git/") ? decodeURIComponent(req.url.slice(5)) : "";
+  if (byKey(gk2)) {
     if (!ownPage(req)) { res.writeHead(403).end("forbidden"); return; }
-    execFile("git", ["-C", winDir(byKey(pk).dir), "push"], { windowsHide: true }, async (err, out, errOut) => {
-      if (err) { res.writeHead(500, cors).end(String(errOut || err.message).trim().slice(-800)); return; }
+    let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
+    const act = body.action, message = String(body.message || "").trim().slice(0, 5000), dir = winDir(byKey(gk2).dir);
+    if (!["commit", "push", "both"].includes(act) || (act !== "push" && !message)) { res.writeHead(400, cors).end("need an action and, to commit, a message"); return; }
+    try {
+      const out = [];
+      if (act !== "push") {
+        const changed = (await git(dir, "status", "--porcelain=v1", "-uall")).split("\n").filter(Boolean).map((l) => l.slice(3).replace(/^"|"$/g, "").split(" -> ").pop());
+        const risky = changed.filter((f) => SECRETISH.test(f) && !/\.(example|sample|template)$/i.test(f));
+        if (risky.length) throw new Error(`Not committing: these look like secrets and should be in .gitignore:\n${risky.join("\n")}`);
+        if (!changed.length) throw new Error("Nothing to commit.");
+        await git(dir, "add", "-A");
+        out.push(await git(dir, "commit", "-m", message));
+      }
+      if (act !== "commit") {
+        const upstream = await git(dir, "rev-parse", "--abbrev-ref", "@{u}").catch(() => "");
+        out.push(upstream ? await git(dir, "push") : await git(dir, "push", "-u", "origin", "HEAD"));
+      }
       try { await build(); } catch {}
-      res.writeHead(200, cors).end(String(errOut || out).trim() || "pushed");
-    });
+      res.writeHead(200, cors).end(out.join("\n").trim() || "done");
+    } catch (e) { res.writeHead(500, cors).end(String(e.message).trim().slice(-800)); }
     return;
   }
   if (req.method === "POST" && req.url === "/refresh") {
