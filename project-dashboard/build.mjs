@@ -1,23 +1,12 @@
-// Builds project-dashboard/index.html: status, outstanding issues and items to commit for the
-// BWE, BWE_HDBS, BWE_OneClickAnswers and BWE_JKClassicBuggies projects. Read-only (git + gh).
+// Builds project-dashboard/index.html: status, outstanding issues, items to commit, recent GitHub activity
+// and recent Claude Code sessions for each project in projects.mjs. Read-only (git + gh + local transcripts).
 // Usage: node project-dashboard/build.mjs [--open]
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const OWNER = "BWERepo";
-const PROJECTS = [
-  { key: "BWE", name: "Business Web Express", dir: "Z:/Backup/Websites/BusinessWebExpress", repo: "BWE" },
-  { key: "BWE_HDBS", name: "Handmade Designs By Suzi", dir: "Z:/Backup/Websites/HandmadeDesignsBySuzi", repo: "HDBS" },
-  { key: "BWE_OneClickAnswers", name: "One Click Answers", dir: "Z:/Backup/websites/OneClickAnswers", repo: "OneClickAnswers" },
-  { key: "BWE_JKClassicBuggies", name: "JK Classic Buggies V2", dir: "Z:/Backup/websites/JKClassicBuggiesV2", repo: "JKClassicBuggiesV2" },
-  { key: "BWE_BlogEngine", name: "Blog Engine", dir: "Z:/Backup/websites/BlogEngine", repo: "BlogEngine" },
-  { key: "BWE_SEOEngine", name: "SEO Engine", dir: "Z:/Backup/websites/SEOEngine", repo: "SEOEngine" },
-  { key: "BWE_FAQEngine", name: "FAQ Engine", dir: "Z:/Backup/websites/FAQEngine", repo: "FAQEngine" },
-  { key: "BWE_ClaudeSkills", name: "Claude Skills", dir: "Z:/Backup/websites/ClaudeSkills", repo: "ClaudeSkills" },
-  { key: "BWE_Dashboards", name: "Dashboards", dir: "Z:/Backup/websites/Dashboards", repo: null }, // local only, no GitHub repo yet
-];
+import { OWNER, PROJECTS, claudeSessions, winDir } from "./projects.mjs";
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"] });
 const attempt = (fn, fallback = null) => { try { return fn(); } catch { return fallback; } };
@@ -66,24 +55,47 @@ function statusDoc(dir) {
 }
 
 function remote({ repo }) {
-  if (!repo) return { url: null, issues: [], prs: [] };
+  if (!repo) return { url: null, issues: [], prs: [], activity: [] };
   const r = `${OWNER}/${repo}`;
-  const issues = attempt(() => JSON.parse(gh("issue", "list", "-R", r, "--state", "open", "-L", "50", "--json", "number,title,url,updatedAt,body,labels")), []);
-  const prs = attempt(() => JSON.parse(gh("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt")), []);
+  const json = (...args) => attempt(() => JSON.parse(gh(...args)), []);
+  const issues = json("issue", "list", "-R", r, "--state", "open", "-L", "50", "--json", "number,title,url,updatedAt,body,labels");
+  const prs = json("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt");
   return {
     url: `https://github.com/${r}`,
     issues: issues.map((i) => ({ number: i.number, title: i.title, url: i.url, updatedAt: i.updatedAt, labels: i.labels.map((l) => l.name), body: (i.body || "").slice(0, 4000) })),
     prs,
+    activity: activity(r, json),
   };
+}
+
+// One timeline of GitHub messages: issues and PRs (opened or updated), their comments, commits and Actions runs.
+function activity(r, json) {
+  const short = (s, n = 3000) => { s = String(s || "").trim(); return s.length > n ? s.slice(0, n) + " …" : s; };
+  const items = [];
+  for (const i of json("issue", "list", "-R", r, "--state", "all", "-L", "15", "--json", "number,title,url,state,author,createdAt,updatedAt,body"))
+    items.push({ type: "issue", number: i.number, title: i.title, url: i.url, state: i.state.toLowerCase(), author: i.author?.login, at: i.updatedAt, created: i.createdAt, body: short(i.body) });
+  for (const p of json("pr", "list", "-R", r, "--state", "all", "-L", "15", "--json", "number,title,url,state,isDraft,author,createdAt,updatedAt,body"))
+    items.push({ type: "pr", number: p.number, title: p.title, url: p.url, state: p.isDraft && p.state === "OPEN" ? "draft" : p.state.toLowerCase(), author: p.author?.login, at: p.updatedAt, created: p.createdAt, body: short(p.body) });
+  const num = (u) => Number(String(u || "").match(/\/(\d+)$/)?.[1]) || null;
+  for (const c of json("api", `repos/${r}/issues/comments?sort=updated&direction=desc&per_page=25`))
+    items.push({ type: "comment", number: num(c.issue_url), title: `Comment on #${num(c.issue_url)}`, url: c.html_url, author: c.user?.login, at: c.updated_at, body: short(c.body) });
+  for (const c of json("api", `repos/${r}/pulls/comments?sort=updated&direction=desc&per_page=15`))
+    items.push({ type: "comment", number: num(c.pull_request_url), title: `Review comment on #${num(c.pull_request_url)}${c.path ? " · " + c.path : ""}`, url: c.html_url, author: c.user?.login, at: c.updated_at, body: short(c.body) });
+  for (const c of json("api", `repos/${r}/commits?per_page=15`))
+    items.push({ type: "commit", title: c.commit.message.split("\n")[0], url: c.html_url, sha: c.sha.slice(0, 7), author: c.author?.login || c.commit.author?.name, at: c.commit.author?.date, body: short(c.commit.message.split("\n").slice(1).join("\n")) });
+  for (const w of json("run", "list", "-R", r, "-L", "15", "--json", "displayTitle,workflowName,status,conclusion,createdAt,url,event,headBranch"))
+    items.push({ type: "run", title: `${w.workflowName}: ${w.displayTitle}`, url: w.url, state: w.conclusion || w.status, author: `${w.event} · ${w.headBranch}`, at: w.createdAt });
+  return items.filter((i) => i.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 80);
 }
 
 const data = {
   generatedAt: new Date().toISOString(),
   projects: PROJECTS.map((p) => {
-    const out = { key: p.key, name: p.name, dir: p.dir.replace(/\//g, "\\") };
+    const out = { key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null };
     try { out.git = gitState(p.dir); } catch (e) { out.error = String(e.message).slice(0, 300); }
     out.doc = attempt(() => statusDoc(p.dir));
     out.remote = remote(p);
+    out.sessions = attempt(() => claudeSessions(p.dir), []);
     return out;
   }),
 };
@@ -93,5 +105,5 @@ const html = readFileSync(join(here, "page-template.html"), "utf8").replace("/*_
 const outFile = join(here, "index.html");
 writeFileSync(outFile, html, "utf8");
 console.log(`Wrote ${outFile}`);
-for (const p of data.projects) console.log(`${p.key}: ${p.git ? `${p.git.files.length} uncommitted, ${p.git.unpushed.length} unpushed` : p.error}; ${p.remote.issues.length} issues, ${p.remote.prs.length} PRs`);
+for (const p of data.projects) console.log(`${p.key}: ${p.git ? `${p.git.files.length} uncommitted, ${p.git.unpushed.length} unpushed` : p.error}; ${p.remote.issues.length} issues, ${p.remote.prs.length} PRs, ${p.remote.activity.length} GitHub events, ${p.sessions.length} Claude sessions`);
 if (process.argv.includes("--open")) execFileSync("cmd", ["/c", "start", "", outFile]);
