@@ -16,6 +16,7 @@ const PROJECTS = [
   { key: "BWE_SEOEngine", name: "SEO Engine", dir: "Z:/Backup/websites/SEOEngine", repo: "SEOEngine" },
   { key: "BWE_FAQEngine", name: "FAQ Engine", dir: "Z:/Backup/websites/FAQEngine", repo: "FAQEngine" },
   { key: "BWE_ClaudeSkills", name: "Claude Skills", dir: "Z:/Backup/websites/ClaudeSkills", repo: "ClaudeSkills" },
+  { key: "BWE_Dashboards", name: "Dashboards", dir: "Z:/Backup/websites/Dashboards", repo: null }, // local only, no GitHub repo yet
 ];
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"] });
@@ -65,6 +66,7 @@ function statusDoc(dir) {
 }
 
 function remote({ repo }) {
+  if (!repo) return { url: null, issues: [], prs: [] };
   const r = `${OWNER}/${repo}`;
   const issues = attempt(() => JSON.parse(gh("issue", "list", "-R", r, "--state", "open", "-L", "50", "--json", "number,title,url,updatedAt,body,labels")), []);
   const prs = attempt(() => JSON.parse(gh("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt")), []);

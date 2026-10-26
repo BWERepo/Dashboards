@@ -212,7 +212,7 @@ function projectView(p) {
   const job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
   return `${CMDS[p.key] ? `<div class="tools">${busy ? "" : `<button class="rbtn" style="margin:0" onclick="checkpoint('${p.key}')">Checkpoint ${esc(p.key)}</button>`}<span id="jobbadge">${badge(p.key)}</span><span class="sub" id="cpmsg">${busy ? "" : `Runs <code>${CMDS[p.key]}</code> in the background.`}</span></div>
   ${jobPanel(p.key)}` : ""}
-  <div class="sub"><code>${esc(p.dir)}</code> · <a href="${r.url}" target="_blank" rel="noopener">GitHub</a> · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
+  <div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
   <div class="sub">Last commit <code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} (${ago(g.last.date)})</div>
   <h3>Items to commit (${g.files.length})</h3>
   ${g.files.length ? `<div class="tbl"><table><tr><th>State</th><th>Path</th></tr>${g.files.map((f) => `<tr><td><span class="pill ${f.kind === "conflict" ? "bad" : "warn"}">${f.kind}</span></td><td class="path">${esc(f.path)}</td></tr>`).join("")}</table></div>` : `<div class="empty">Working tree is clean.</div>`}
