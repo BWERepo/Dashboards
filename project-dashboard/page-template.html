@@ -9,11 +9,14 @@
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--ink:#e8ebef;--mute:#98a2ae;--line:#2a3039;--ok:#4cc38a;--warn:#e0a03a;--bad:#f2766d;--accent:#7aa2ff;--chip:#222831}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
-header{padding:20px 16px 8px;max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+header{padding:20px 16px 8px;max-width:1500px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
 h1{font-size:22px;margin:0}
 .sub{color:var(--mute);font-size:13px}
-main{max-width:1200px;margin:0 auto;padding:8px 16px 48px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:12px 0 20px}
+main{max-width:1500px;margin:0 auto;padding:8px 16px 48px}
+.top{display:flex;gap:14px;align-items:flex-start;margin:12px 0 20px}.top .grid{flex:1;min-width:0;margin:0}.top #plan{flex:0 0 400px;position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto}.top #plan .plan{margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px}
+.grid .card{padding:9px 11px}.grid .card .sub{font-size:12px}.grid .big{font-size:17px}.grid .card{overflow-wrap:break-word}.grid .card h2{overflow-wrap:anywhere;font-size:15px}.grid .row{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin-top:6px}.grid .row b{display:inline;margin-right:5px}.grid .row small{display:inline;white-space:nowrap}.grid .row b{font-size:15px}.grid .row small{font-size:11px}.grid .row div{min-width:0}.grid .gitsel{padding:3px 6px;font-size:13px}
+@media (max-width:1000px){.top{flex-direction:column}.top #plan{flex:none;width:100%;position:static;max-height:none}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .card h2{font-size:16px;margin:0 0 2px}
 .big{font-size:24px;font-weight:650;line-height:1.2}
@@ -109,8 +112,7 @@ body.locked{overflow:hidden}
   <div class="sub" id="gen"></div>
 </header>
 <main>
-  <section id="plan" aria-label="Recommended actions"></section>
-  <div class="grid" id="cards"></div>
+  <div class="top"><div class="grid" id="cards"></div><section id="plan" aria-label="Recommended actions"></section></div>
   <nav id="tabs"></nav>
   <section id="detail"></section>
 </main>
