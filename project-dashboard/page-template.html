@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Status Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16191d;--mute:#5d6672;--line:#e1e5ea;--ok:#157347;--warn:#b26a00;--bad:#b3261e;--accent:#1a56db;--chip:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--ink:#e8ebef;--mute:#98a2ae;--line:#2a3039;--ok:#4cc38a;--warn:#e0a03a;--bad:#f2766d;--accent:#7aa2ff;--chip:#222831}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+header{padding:20px 16px 8px;max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+h1{font-size:22px;margin:0}
+.sub{color:var(--mute);font-size:13px}
+main{max-width:1200px;margin:0 auto;padding:8px 16px 48px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:12px 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{font-size:16px;margin:0 0 2px}
+.big{font-size:24px;font-weight:650;line-height:1.2}
+.row{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
+.row div{min-width:64px}.row small{display:block;color:var(--mute);font-size:12px}
+.pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:600;background:var(--chip)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 12px}
+nav button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 14px;border-radius:8px;cursor:pointer}
+nav button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+h3{font-size:15px;margin:22px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td.path{word-break:break-all;font:13px ui-monospace,Consolas,monospace}
+a{color:var(--accent)}
+.rbtn{font:inherit;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:5px 14px;border-radius:8px;cursor:pointer;margin-left:8px}
+.ask{border-left:4px solid var(--warn);background:var(--chip);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.asktext{white-space:pre-wrap;word-break:break-word;margin-top:4px}
+.opt{font:inherit;border:1px solid var(--accent);background:var(--card);color:var(--accent);padding:4px 12px;border-radius:8px;cursor:pointer}
+.joblog{max-height:320px;overflow:auto;background:var(--chip);border-radius:8px;padding:10px;margin:0 0 10px}
+textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:4px 0 10px}
+#auto{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);margin-left:8px}
+.rbtn:disabled{opacity:.6;cursor:wait}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:6px 0}
+summary{cursor:pointer;font-weight:600}
+pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 2px}
+ul.items{margin:6px 0;padding-left:20px}ul.items li{margin:3px 0}
+code{font:13px ui-monospace,Consolas,monospace;background:var(--chip);padding:1px 5px;border-radius:4px}
+.empty{color:var(--mute);padding:18px;text-align:center;background:var(--card);border:1px dashed var(--line);border-radius:10px}
+.tbl{overflow-x:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>Project Status Dashboard</h1>
+  <div class="sub" id="gen"></div>
+</header>
+<main>
+  <div class="grid" id="cards"></div>
+  <nav id="tabs"></nav>
+  <section id="detail"></section>
+</main>
+<script>
+window.addEventListener("error", (e) => {
+  const d = document.querySelector("#detail") || document.body;
+  d.insertAdjacentHTML("afterbegin", `<div class="empty bad">The dashboard hit an error: ${String(e.message).replace(/</g, "&lt;")} (line ${e.lineno}).</div>`);
+});
+const DATA = /*__DATA__*/null;
+if (!DATA) throw new Error("This is the blank page-template.html, not the dashboard. Run refresh.cmd.");
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ago = (iso) => { if (!iso) return "never"; const h = (Date.now() - Date.parse(iso)) / 36e5; return h < 1 ? "just now" : h < 48 ? Math.round(h) + " h ago" : Math.round(h / 24) + " days ago"; };
+const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "-";
+let tab = "overview";
+
+const SERVER = "http://127.0.0.1:8788";
+const AUTO_KEY = "projdash-auto";
+const getAuto = () => { try { return localStorage.getItem(AUTO_KEY) || "0"; } catch { return "0"; } };
+$("#gen").innerHTML = `<span id="stamp"></span> <select id="auto" aria-label="Auto refresh"><option value="0">Auto-refresh off</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select><button id="refresh" class="rbtn">Refresh now</button>`;
+$("#stamp").textContent = "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ").";
+async function refresh(manual) {
+  const b = $("#refresh");
+  b.disabled = true; b.textContent = "Refreshing...";
+  try {
+    const onServer = location.protocol === "http:";
+    const r = await fetch((onServer ? "" : SERVER) + "/refresh", { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    if (onServer) location.reload(); else location.href = SERVER; // a file copy moves to the live page
+  } catch (err) {
+    b.disabled = false; b.textContent = "Refresh now";
+    $("#stamp").textContent = location.protocol === "http:" ? "Refresh failed: " + err.message : "The local server is not running. Double-click refresh.cmd, then try again.";
+  }
+}
+$("#refresh").onclick = () => refresh(true);
+$("#auto").value = getAuto();
+$("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} location.reload(); };
+if (getAuto() !== "0" && location.protocol === "http:") setTimeout(() => refresh(false), Number(getAuto()) * 60000);
+
+// Outstanding = open GitHub issues + open PRs + the newest "still open" list from PROJECT_STATUS.md.
+// Ahead AND behind means local and remote have split (often squash-merged PRs), so "unpushed" is not a real count.
+const diverged = (p) => !!(p.git && p.git.ahead && p.git.behind);
+const counts = (p) => ({
+  uncommitted: p.git?.files.length ?? 0,
+  unpushed: p.git?.unpushed.length ?? 0,
+  issues: p.remote.issues.length,
+  prs: p.remote.prs.length,
+  todo: p.doc?.totalOpen ?? 0,
+});
+function status(p) {
+  if (p.error) return ["Git error", "bad"];
+  const c = counts(p);
+  if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
+  if (c.uncommitted || c.unpushed) return ["Needs commit", "warn"];
+  if (p.git.behind) return ["Behind remote", "warn"];
+  if (c.issues || c.prs) return ["Open items", "warn"];
+  return ["Clean", "ok"];
+}
+
+function cards() {
+  $("#cards").innerHTML = DATA.projects.map((p) => {
+    const [label, cls] = status(p), c = counts(p);
+    return `<div class="card"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
+      <div class="big ${cls}">${label}</div>${badge(p.key) ? `<div>${badge(p.key)}</div>` : ""}
+      <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : esc(p.error)}</div>
+      <div class="row"><div><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div title="Local and remote have split"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : `<div><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div><b>${c.prs}</b><small>Open PRs</small></div></div>
+    </div>`;
+  }).join("");
+}
+
+function tabs() {
+  const items = [["overview", "Overview"], ...DATA.projects.map((p) => [p.key, p.key])];
+  $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
+  $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { tab = k; tabs(); render(); } };
+}
+
+function overview() {
+  const commit = DATA.projects.filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
+  const issues = DATA.projects.flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
+  return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
+    ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
+    `<h3>Open issues and pull requests</h3>` + (issues.length ? `<div class="tbl"><table><tr><th>Project</th><th>Type</th><th>Title</th><th>Updated</th></tr>
+    ${issues.map((i) => `<tr><td>${esc(i.p.key)}</td><td>${i.t}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number} ${esc(i.title)}</a></td><td>${ago(i.updatedAt)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No open issues or pull requests.</div>`);
+}
+
+const CMDS = { BWE: "/BWECheckpoint", BWE_HDBS: "/BWEHDBSCheckpoint", BWE_OneClickAnswers: "/BWEOCACheckpoint", BWE_JKClassicBuggies: "/BWEJKCBCheckpoint" };
+let JOBS = {};
+const clock = (j) => { const s = Math.round(((j.endedAt || Date.now()) - j.startedAt) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+const badge = (key) => { const j = JOBS[key]; return !j ? "" : j.status === "running" ? `<span class="pill warn">&#9201; Checkpoint ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill warn">&#9888; Claude needs input</span>` : j.status === "done" ? `<span class="pill ok">&#10003; Checkpoint done</span>` : `<span class="pill bad">&#10007; Checkpoint failed</span>`; };
+const sig = (o) => Object.entries(o).map(([k, j]) => k + j.status + (j.denials?.length || 0)).join();
+async function poll() {
+  if (location.protocol !== "http:") return;
+  try {
+    const next = await (await fetch("/status", { cache: "no-store" })).json();
+    const finished = Object.keys(next).some((k) => JOBS[k]?.status === "running" && next[k].status !== "running");
+    const changed = sig(next) !== sig(JOBS);
+    JOBS = next;
+    if (finished) { location.reload(); return; } // the server rebuilt the data
+    cards();
+    if (changed && tab !== "overview") { render(); return; }
+    // Same state: refresh only the log and clock so a half-typed reply is not wiped.
+    const log = $("#joblog"), b = $("#jobbadge");
+    if (log && JOBS[tab]) { const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8; log.textContent = JOBS[tab].log; if (atEnd) log.scrollTop = log.scrollHeight; }
+    if (b) b.innerHTML = badge(tab);
+  } catch {}
+}
+function pick(o) { const t = $("#reply"); t.value = (t.value ? t.value + " " : "") + o; t.focus(); }
+document.addEventListener("keydown", (e) => { if (e.target.id === "reply" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) reply(tab, false); });
+async function reply(key, allow) {
+  const text = ($("#reply")?.value || "").trim();
+  if (!allow && !text) return;
+  try {
+    const r = await fetch("/reply/" + key, { method: "POST", body: JSON.stringify({ text, allow }) });
+    if (!r.ok) throw new Error(await r.text());
+    await poll(); render();
+  } catch (err) { $("#cpmsg").textContent = "Could not send: " + err.message; }
+}
+const denialText = (d) => d.tool_name + (d.tool_input?.command ? ": " + d.tool_input.command : d.tool_input?.file_path ? ": " + d.tool_input.file_path : "");
+function jobPanel(key) {
+  const j = JOBS[key];
+  if (!j) return "";
+  const waiting = j.status !== "running";
+  // Lettered options in the question (A:, B), C.) become quick-fill buttons; the answer is still sent by the user.
+  const opts = waiting ? [...new Set([...(j.result || "").matchAll(/^\s*(?:[-*]\s*)?\**\(?([A-D])[:.)]/gm)].map((m) => m[1]))] : [];
+  const ask = waiting && j.status === "waiting" && j.result ? `<div class="ask"><div class="sub"><b>Claude is asking:</b></div><div class="asktext">${esc(j.result)}</div>
+    ${opts.length ? `<div class="tools">${opts.map((o) => `<button class="opt" onclick="pick('${o}')">Option ${o}</button>`).join("")}</div>` : ""}</div>` : "";
+  return `<div class="card" style="margin:8px 0">
+    ${ask}
+    <details ${ask ? "" : "open"}><summary>Activity log</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details>
+    ${waiting && j.denials?.length ? `<div class="sub bad">Claude was blocked from:</div><ul class="items">${j.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" onclick="reply('${key}', true)">Allow these and continue</button>` : ""}
+    ${waiting && j.sessionId ? `<div class="tools"><textarea id="reply" rows="2" placeholder="Type your answer (Ctrl+Enter to send)..."></textarea><button class="rbtn" style="margin:0" onclick="reply('${key}', false)">Send</button></div>` : ""}
+  </div>`;
+}
+setInterval(poll, 3000); poll();
+
+async function checkpoint(key) {
+  const msg = $("#cpmsg");
+  if (!confirm(`Run ${CMDS[key]} for ${key}?\n\nThis builds, deploys staging and production, then commits and pushes. It runs in the background with no window; a clock shows until it finishes.`)) return;
+  try {
+    const r = await fetch(SERVER + "/checkpoint/" + key, { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    if (location.protocol !== "http:") { location.href = SERVER; return; }
+    await poll(); render();
+  } catch {
+    try { await navigator.clipboard.writeText(CMDS[key]); msg.textContent = "Server not running. Copied " + CMDS[key] + ". Paste it into Claude Code in that project."; }
+    catch { msg.textContent = "Server not running. Run " + CMDS[key] + " in Claude Code in that project."; }
+  }
+}
+
+function projectView(p) {
+  if (p.error) return `<div class="empty bad">${esc(p.error)}</div>`;
+  const g = p.git, r = p.remote;
+  const sync =!g.upstream ? "No upstream branch" : `${g.ahead} ahead / ${g.behind} behind ${esc(g.upstream)}`;
+  const job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
+  return `${CMDS[p.key] ? `<div class="tools">${busy ? "" : `<button class="rbtn" style="margin:0" onclick="checkpoint('${p.key}')">Checkpoint ${esc(p.key)}</button>`}<span id="jobbadge">${badge(p.key)}</span><span class="sub" id="cpmsg">${busy ? "" : `Runs <code>${CMDS[p.key]}</code> in the background.`}</span></div>
+  ${jobPanel(p.key)}` : ""}
+  <div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
+  <div class="sub">Last commit <code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} (${ago(g.last.date)})</div>
+  <h3>Items to commit (${g.files.length})</h3>
+  ${g.files.length ? `<div class="tbl"><table><tr><th>State</th><th>Path</th></tr>${g.files.map((f) => `<tr><td><span class="pill ${f.kind === "conflict" ? "bad" : "warn"}">${f.kind}</span></td><td class="path">${esc(f.path)}</td></tr>`).join("")}</table></div>` : `<div class="empty">Working tree is clean.</div>`}
+  ${g.unpushed.length ? `<h3>Commits not pushed (${g.unpushed.length})</h3>${diverged(p) ? `<div class="sub warn">Local and remote have diverged (${g.ahead} ahead, ${g.behind} behind). These may already be merged on GitHub under different hashes.</div>` : ""}<ul class="items">${g.unpushed.map((c) => `<li><code>${esc(c.slice(0, 7))}</code> ${esc(c.slice(8))}</li>`).join("")}</ul>` : ""}
+  <h3>Outstanding issues</h3>
+  ${r.issues.map((i) => `<details><summary><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a> ${esc(i.title)} <span class="sub">· ${ago(i.updatedAt)}</span></summary><pre>${esc(i.body)}</pre></details>`).join("") || `<div class="empty">No open issues.</div>`}
+  ${r.prs.length ? `<h3>Open pull requests</h3><ul class="items">${r.prs.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}${x.isDraft ? " (draft)" : ""}</li>`).join("")}</ul>` : ""}
+  <h3>Status notes (PROJECT_STATUS.md)</h3>
+  ${p.doc ? `<div class="sub">${esc(p.doc.headline)}</div>${p.doc.open.length ? `<ul class="items">${p.doc.open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${p.doc.totalOpen > p.doc.open.length ? `<div class="sub">Showing ${p.doc.open.length} of ${p.doc.totalOpen}. See PROJECT_STATUS.md.</div>` : ""}` : `<div class="empty">No "still open" list in the newest entry.</div>`}` : `<div class="empty">No PROJECT_STATUS.md found.</div>`}`;
+}
+
+function render() {
+  const p = DATA.projects.find((x) => x.key === tab);
+  $("#detail").innerHTML = p ? projectView(p) : overview();
+}
+cards(); tabs(); render();
+</script>
+</body>
+</html>
