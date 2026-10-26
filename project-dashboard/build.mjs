@@ -88,6 +88,13 @@ function activity(r, json) {
   return items.filter((i) => i.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 80);
 }
 
+// The pull request (newest, any state) whose head is the local branch, so a row can say where its work is going.
+function branchPr(repo, branch) {
+  if (!branch) return null;
+  const [pr] = attempt(() => JSON.parse(gh("pr", "list", "-R", `${OWNER}/${repo}`, "--head", branch, "--state", "all", "-L", "1", "--json", "number,title,url,state,isDraft")), []);
+  return pr ? { number: pr.number, title: pr.title, url: pr.url, state: pr.isDraft && pr.state === "OPEN" ? "draft" : pr.state.toLowerCase() } : null;
+}
+
 const data = {
   generatedAt: new Date().toISOString(),
   projects: PROJECTS.map((p) => {
@@ -95,6 +102,7 @@ const data = {
     try { out.git = gitState(p.dir); } catch (e) { out.error = String(e.message).slice(0, 300); }
     out.doc = attempt(() => statusDoc(p.dir));
     out.remote = remote(p);
+    out.branchPr = out.git && p.repo ? branchPr(p.repo, out.git.branch) : null;
     out.sessions = attempt(() => claudeSessions(p.dir), []);
     return out;
   }),

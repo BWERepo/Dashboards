@@ -240,11 +240,19 @@ function closeProject() {
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && tab !== "overview" && !document.fullscreenElement) closeProject(); });
 
+const prCell = (pr) => pr ? `<a href="${esc(pr.url)}" target="_blank" rel="noopener">#${pr.number}</a> <span class="pill ${pr.state === "merged" ? "ok" : pr.state === "closed" ? "bad" : "warn"}">${esc(pr.state)}</span><div class="meta">${esc(pr.title)}</div>` : `<span class="meta">No PR</span>`;
+// What is waiting: the unpushed commit messages, then the changed files.
+function describe(p) {
+  const g = p.git, more = (n, shown) => n > shown ? `<li class="meta">and ${n - shown} more</li>` : "";
+  const commits = g.unpushed.slice(0, 5).map((c) => `<li>${esc(c.slice(8))}</li>`).join("") + more(g.unpushed.length, 5);
+  const files = g.files.slice(0, 5).map((f) => `<li><code>${esc(f.path)}</code> <span class="meta">${f.kind}</span></li>`).join("") + more(g.files.length, 5);
+  return (commits ? `<div class="meta">Commits</div><ul class="items">${commits}</ul>` : "") + (files ? `<div class="meta">Changed files</div><ul class="items">${files}</ul>` : "") || "-";
+}
 function overview() {
   const commit = DATA.projects.filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
   const issues = DATA.projects.flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
-  return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
-    ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
+  return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>PR</th><th>Description</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
+    ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${prCell(p.branchPr)}</td><td>${describe(p)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
     `<h3>Open issues and pull requests</h3>` + (issues.length ? `<div class="tbl"><table><tr><th>Project</th><th>Type</th><th>Title</th><th>Updated</th></tr>
     ${issues.map((i) => `<tr><td>${esc(i.p.key)}</td><td>${i.t}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number} ${esc(i.title)}</a></td><td>${ago(i.updatedAt)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No open issues or pull requests.</div>`);
 }
