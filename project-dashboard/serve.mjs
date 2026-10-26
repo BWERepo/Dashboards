@@ -5,6 +5,8 @@ import { execFile, spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { OWNER, PROJECTS, asksUser, byKey, isSessionId, sessionFiles, winDir } from "./projects.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -130,6 +132,29 @@ function explainGit(msg, dir) {
   if (/no upstream|no tracking information/i.test(m)) return problem("This branch isn't linked to a branch on GitHub.", "Pick Push once to create it on GitHub, then try again.", m);
   return problem("Git reported an error.", "Read the details below. If they don't make sense, send a screenshot of this message to Claude.", m);
 }
+// A plain-words version of a Claude message, written by a short headless `claude -p` run (nothing is resumed or saved
+// in the project). Kept in memory by text, so each message is only summarised once.
+const summaries = new Map();
+function summarize(text) {
+  const id = createHash("sha1").update(text).digest("hex").slice(0, 16);
+  if (!summaries.has(id)) {
+    const entry = { status: "working", text: "" }; summaries.set(id, entry);
+    const prompt = "Below is a message Claude Code wrote to its user, who is not a programmer. Rewrite it in plain, simple English for a busy business owner: no code, file names, commit ids or jargon. Use exactly these four lines, in this order, and nothing else:\n" +
+      "What happened: (1-2 short sentences)\nWhat Claude needs from you: (1 short sentence, the actual question)\nYour choices: (each choice in a few plain words, separated by ' / ', or 'Any answer in your own words')\nRecommended: (the choice Claude recommends and why in a few words, or 'None given')\n\nIf the message is cut off or does not ask anything, say so on the 'What Claude needs from you' line.\n\n--- MESSAGE ---\n" + text.slice(-6000);
+    const child = spawn("claude", ["-p", "--model", "haiku"], { cwd: tmpdir(), shell: true, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    let out = "", errOut = "";
+    const timer = setTimeout(() => child.kill(), 120000);
+    child.stdin.on("error", () => {}); child.stdin.end(prompt);
+    child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (errOut += d));
+    child.on("error", (e) => { errOut += e.message; });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0 && out.trim()) Object.assign(entry, { status: "done", text: out.trim().slice(0, 1500) });
+      else { Object.assign(entry, { status: "failed", text: problem("Claude couldn't write the plain summary.", "Read the original message below instead. If it keeps failing, check Claude Code is signed in (in PowerShell run claude --version).", errOut) }); setTimeout(() => summaries.delete(id), 60000); }
+    });
+  }
+  return { id, ...summaries.get(id) };
+}
 const readBody = (req) => new Promise((resolve) => { let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => resolve(b)); });
 
 const server = createServer(async (req, res) => {
@@ -224,6 +249,14 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, cors).end(out.join("\n").trim() || "done"); // the page asks for the rebuild, so it can show that step
     } catch (e) { res.writeHead(500, cors).end(/\nWhat to do: /.test(e.message) ? e.message : explainGit(e.message, dir)); }
+    return;
+  }
+  if (req.method === "POST" && req.url === "/summary") {
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
+    let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
+    const text = String(body.text || "").trim();
+    if (!text) { fail(res, 400, "There was no message to summarise.", "Reload the page and try again."); return; }
+    res.writeHead(200, { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(summarize(text)));
     return;
   }
   // Starts collecting (or queues it behind the run in progress) and answers at once with the run that will have the

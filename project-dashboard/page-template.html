@@ -36,6 +36,7 @@ td.path{word-break:break-all;font:13px ui-monospace,Consolas,monospace}
 a{color:var(--accent)}
 .rbtn{font:inherit;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:5px 14px;border-radius:8px;cursor:pointer;margin-left:8px}
 .ask{border-left:4px solid var(--warn);background:var(--chip);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.plain{background:var(--chip);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;margin:6px 0;white-space:pre-wrap}.plain b{color:var(--ink)}
 .asktext{white-space:pre-wrap;word-break:break-word;margin-top:4px}
 .opt{font:inherit;border:1px solid var(--accent);background:var(--card);color:var(--accent);padding:4px 12px;border-radius:8px;cursor:pointer}
 .joblog{max-height:320px;overflow:auto;background:var(--chip);border-radius:8px;padding:10px;margin:0 0 10px}
@@ -449,6 +450,29 @@ function workingPanel(p) {
     <div class="meta">You can't send anything until it finishes. This page updates by itself; if Claude asks something else, it shows up here.</div>
     <details><summary>Watch what it's doing</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details></div></div>`;
 }
+// Plain-English summaries of Claude's questions, written by the server and fetched once per message.
+const SUMS = {};
+const sumKey = (t) => { let h = 0; for (const c of String(t)) h = (h * 31 + c.charCodeAt(0)) | 0; return "s" + (h >>> 0).toString(36) + String(t).length; };
+const sumHtml = (t) => { const s = SUMS[sumKey(t)]; return !s || s.status === "working" ? `<span class="spin sm" aria-hidden="true"></span> <span class="meta">Writing a plain summary...</span>` : s.status === "failed" ? esc(s.text) : esc(s.text).replace(/^(What happened:|What Claude needs from you:|Your choices:|Recommended:)/gm, "<b>$1</b>"); };
+const sumBusy = new Set();
+async function fetchSummaries(p) {
+  if (!live) return;
+  for (const it of asking(p)) {
+    const k = sumKey(it.text);
+    if ((SUMS[k] && SUMS[k].status !== "working") || sumBusy.has(k)) continue;
+    sumBusy.add(k);
+    for (let n = 0; n < 90; n++) {
+      try {
+        const r = await fetch("/summary", { method: "POST", body: JSON.stringify({ text: it.text }) });
+        SUMS[k] = r.ok ? await r.json() : { status: "failed", text: await r.text() };
+      } catch { SUMS[k] = { status: "failed", text: "The dashboard server isn't running, so no summary could be written.\nWhat to do: double-click refresh.cmd in the project-dashboard folder." }; }
+      document.querySelectorAll(`[data-sum="${k}"]`).forEach((el) => { el.innerHTML = sumHtml(it.text); });
+      if (SUMS[k].status !== "working") break;
+      await sleep(2000);
+    }
+    sumBusy.delete(k);
+  }
+}
 function needPanel(p) {
   if (JOBS[p.key]?.status === "running") return workingPanel(p);
   const items = asking(p);
@@ -460,6 +484,8 @@ function needPanel(p) {
     const rec = (it.text || "").match(/^.*\brecommend.*$/im)?.[0];
     return `<div class="needitem">
       <div><b>Action Required:</b> Claude is waiting on you in <b>${esc(it.title)}</b> <span class="meta">· ${fmt(it.at)}</span></div>
+      <div class="plain" data-sum="${sumKey(it.text)}">${sumHtml(it.text)}</div>
+      <div class="meta">Claude's original message:</div>
       ${it.text.length > 600 ? `<div class="asktext">${md("…" + it.text.slice(-600))}</div><details><summary>Show the whole message</summary><div class="asktext">${md(it.text)}</div></details>` : `<div class="asktext">${md(it.text)}</div>`}
       ${it.denials.length ? `<div><b>Claude was blocked from:</b></div><ul class="items">${it.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" data-send="claude" data-allow="1" data-box="${id}">Allow these and continue</button>` : ""}
       ${opts.length ? `<div class="tools"><b>Options:</b> ${opts.map((o) => `<button class="opt" data-pick="${o}" data-for="${id}">Option ${o}</button>`).join("")}</div>` : ""}
@@ -654,6 +680,7 @@ function render() {
   full.querySelectorAll("textarea").forEach((t, i) => { if (typed[i]) { t.value = typed[i]; t.closest("details")?.setAttribute("open", ""); } });
   full.querySelectorAll(".colbody,.fbody,.need").forEach((el, i) => { if (scroll[i]) el.scrollTop = scroll[i]; });
   if (focus >= 0) full.querySelectorAll("textarea")[focus]?.focus();
+  fetchSummaries(p);
 }
 cards(); tabs(); render();
 if (live) poll().then(watchBuild); else { updatePlan(); drawPlan(); } // a file copy shows the data it was saved with
