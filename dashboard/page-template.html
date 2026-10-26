@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search Monitor Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16191d;--mute:#5d6672;--line:#e1e5ea;--ok:#157347;--warn:#b26a00;--bad:#b3261e;--accent:#1a56db;--chip:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--ink:#e8ebef;--mute:#98a2ae;--line:#2a3039;--ok:#4cc38a;--warn:#e0a03a;--bad:#f2766d;--accent:#7aa2ff;--chip:#222831}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+header{padding:20px 16px 8px;max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+h1{font-size:22px;margin:0}
+.sub{color:var(--mute);font-size:13px}
+main{max-width:1200px;margin:0 auto;padding:8px 16px 48px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:12px 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{font-size:16px;margin:0 0 2px}
+.big{font-size:28px;font-weight:650;line-height:1.1}
+.row{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
+.row div{min-width:70px}.row small{display:block;color:var(--mute);font-size:12px}
+.pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:600;background:var(--chip)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 12px}
+nav button,.tools button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 14px;border-radius:8px;cursor:pointer}
+nav button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+h3{font-size:15px;margin:22px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td.url{word-break:break-all}
+a{color:var(--accent)}
+.rbtn{font:inherit;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:5px 14px;border-radius:8px;cursor:pointer;margin-left:8px}
+.rbtn:disabled{opacity:.6;cursor:wait}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.tools input,.tools select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.tools input{flex:1;min-width:200px}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:6px 0}
+summary{cursor:pointer;font-weight:600}
+pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 2px}
+.empty{color:var(--mute);padding:24px;text-align:center;background:var(--card);border:1px dashed var(--line);border-radius:10px}
+.tbl{overflow-x:auto}
+.spark{display:flex;align-items:flex-end;gap:3px;height:40px;margin-top:10px}
+.spark i{flex:1;min-width:4px;background:var(--accent);opacity:.75;border-radius:2px 2px 0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Search Monitor Dashboard</h1>
+  <div class="sub" id="gen"></div>
+</header>
+<main>
+  <div class="grid" id="cards"></div>
+  <nav id="tabs"></nav>
+  <section id="detail"></section>
+</main>
+<script>
+window.addEventListener("error", (e) => {
+  const d = document.querySelector("#detail") || document.body;
+  d.insertAdjacentHTML("afterbegin", `<div class="empty bad">The dashboard hit an error: ${String(e.message).replace(/</g, "&lt;")} (line ${e.lineno}). Please send this message to Claude.</div>`);
+});
+const DATA = /*__DATA__*/null;
+if (!DATA) throw new Error("This is the blank page-template.html, not the dashboard. Close it and double-click refresh.cmd.");
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ago = (iso) => { if (!iso) return "never"; const h = (Date.now() - Date.parse(iso)) / 36e5; return h < 1 ? "just now" : h < 48 ? Math.round(h) + " h ago" : Math.round(h / 24) + " days ago"; };
+const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "-";
+const host = (u) => { try { return new URL(u).pathname || "/"; } catch { return u; } };
+let tab = "overview", view = {};
+
+$("#gen").innerHTML = `<span id="stamp"></span> <button id="refresh" class="rbtn">Refresh now</button>`;
+$("#stamp").textContent = "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ").";
+$("#refresh").onclick = async (e) => {
+  const b = e.target;
+  if (location.protocol !== "http:") { $("#stamp").textContent = "Refresh needs the local server. Start the dashboard with refresh.cmd."; return; }
+  b.disabled = true; b.textContent = "Refreshing...";
+  try {
+    const r = await fetch("/refresh", { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    location.reload();
+  } catch (err) { b.disabled = false; b.textContent = "Refresh now"; $("#stamp").textContent = "Refresh failed: " + err.message; }
+};
+
+function status(s) {
+  if (!s.setUp) return ["Not set up", "warn"];
+  if (s.lastRun && s.lastRun.conclusion !== "success") return ["Last run " + (s.lastRun.conclusion || "running"), "bad"];
+  const open = s.daily[0]?.open;
+  if (open) return [open + " open findings", "warn"];
+  return s.state && s.state.unknown === s.state.total ? ["No Google data yet", "warn"] : ["Healthy", "ok"];
+}
+
+function cards() {
+  $("#cards").innerHTML = DATA.sites.map((s) => {
+    const [label, cls] = status(s), st = s.state, d = s.daily[0];
+    const hist = s.daily.slice(0, 14).reverse().filter((r) => r.open != null);
+    const max = Math.max(1, ...hist.map((r) => r.open));
+    return `<div class="card"><h2>${esc(s.name)}</h2>
+      <div class="big ${cls}">${esc(label)}</div>
+      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) : "Daily workflow not found in " + esc(s.repo)}</div>
+      ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
+      ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+function tabs() {
+  const items = [["overview", "Overview"], ...DATA.sites.map((s) => [s.repo, s.name])];
+  $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
+  $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { tab = k; tabs(); render(); } };
+}
+
+function overview() {
+  const rows = DATA.sites.flatMap((s) => s.daily.map((r) => ({ site: s.name, ...r })))
+    .sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
+  return `<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
+    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) + weeklyAll();
+}
+
+function weeklyAll() {
+  const w = DATA.sites.flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
+  return `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
+}
+
+function siteView(s) {
+  if (!s.setUp) return `<div class="empty"><b>${esc(s.name)}</b> has no search monitor yet.<br>Run <code>/bwe-create-search-monitor-workflows</code> in the <code>${esc(s.repo)}</code> repo, then refresh this page.</div>`;
+  const f = view[s.repo] ||= { q: "", kind: "", verdict: "" };
+  const pages = s.state?.pages || [];
+  const kinds = [...new Set(pages.flatMap((p) => p.findings.map((x) => x.kind)))].sort();
+  const list = pages.filter((p) => (!f.q || p.url.toLowerCase().includes(f.q.toLowerCase())) &&
+    (!f.kind || p.findings.some((x) => x.kind === f.kind)) && (!f.verdict || (f.verdict === "ok" ? p.verdict === "PASS" : p.verdict !== "PASS")))
+    .sort((a, b) => (b.findings.length - a.findings.length) || a.url.localeCompare(b.url));
+  const d = s.daily[0];
+  return `<div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
+  <h3>Pages (${list.length} of ${pages.length})</h3>
+  <div class="tools"><input id="q" placeholder="Filter by URL" value="${esc(f.q)}">
+    <select id="k"><option value="">All findings</option>${kinds.map((k) => `<option ${f.kind === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
+    <select id="v"><option value="">All pages</option><option value="ok" ${f.verdict === "ok" ? "selected" : ""}>Indexed</option><option value="no" ${f.verdict === "no" ? "selected" : ""}>Not indexed / unknown</option></select></div>
+  <div class="tbl"><table><tr><th>Page</th><th>Google</th><th>Last crawl</th><th>Findings</th></tr>
+  ${list.slice(0, 300).map((p) => `<tr><td class="url"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(host(p.url))}</a></td>
+    <td class="${p.verdict === "PASS" ? "ok" : "bad"}">${esc(p.coverage || p.verdict || "Not inspected")}</td><td>${p.lastCrawl ? p.lastCrawl.slice(0, 10) : "-"}</td>
+    <td>${p.findings.map((x) => `<span class="pill ${x.severity === "high" ? "bad" : "warn"}" title="${esc(x.detail)}">${esc(x.kind)}</span>`).join(" ") || "-"}</td></tr>`).join("")}</table></div>
+  ${list.length > 300 ? `<div class="sub">Showing first 300. Use the filters.</div>` : ""}
+  <h3>Daily reports</h3>${s.daily.map((r, i) => `<details ${i === 0 ? "open" : ""}><summary>${r.date} · ${r.open ?? "-"} open findings · ${r.checked ?? "-"} checked</summary><pre>${esc(r.md)}</pre></details>`).join("") || `<div class="empty">No daily reports yet.</div>`}
+  <h3>Weekly reports</h3>${s.weekly.map((r) => `<details><summary>${r.date}</summary><pre>${esc(r.md)}</pre></details>`).join("") || `<div class="empty">No weekly report yet. It posts Mondays.</div>`}`;
+}
+
+function render() {
+  const s = DATA.sites.find((x) => x.repo === tab);
+  $("#detail").innerHTML = s ? siteView(s) : overview();
+  if (!s) return;
+  const f = view[s.repo], on = (id, key) => { const el = $(id); if (el) el.oninput = () => { f[key] = el.value; const p = el.selectionStart; render(); const n = $(id); n.focus(); try { n.setSelectionRange(p, p); } catch {} }; };
+  on("#q", "q"); on("#k", "kind"); on("#v", "verdict");
+}
+cards(); tabs(); render();
+</script>
+</body>
+</html>
