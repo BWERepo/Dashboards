@@ -2,7 +2,7 @@
 // Usage: node project-dashboard/serve.mjs [--open]   (http://127.0.0.1:8788)
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OWNER, PROJECTS, asksUser, byKey, isSessionId, sessionFiles, winDir } from "./projects.mjs";
@@ -42,7 +42,8 @@ function runBuild() {
     child.on("close", (code) => end(code ? new Error(errOut || `build.mjs stopped with exit code ${code}`) : null));
   });
 }
-// Shown when there is no index.html yet (the very first start): every card says it is loading.
+// The page is always served fresh from the template with every card "loading"; the data then arrives from /progress.
+// (index.html, written by build.mjs, is only the saved copy, so an old one can never show an old dashboard.)
 const blankPage = () => readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify({ generatedAt: null,
   projects: PROJECTS.map((p) => ({ key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null, loading: true, remote: { url: null, issues: [], prs: [], activity: [] }, sessions: [] })) }).replace(/</g, "\\u003c"));
 
@@ -242,7 +243,7 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-    res.end(existsSync(join(here, "index.html")) ? readFileSync(join(here, "index.html")) : blankPage());
+    res.end(blankPage());
     return;
   }
   res.writeHead(404).end();
