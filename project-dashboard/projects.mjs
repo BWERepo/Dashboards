@@ -82,7 +82,8 @@ export function claudeSessions(dir, { sessions = 4, messages = 40 } = {}) {
     const last = [...msgs].reverse().find((m) => m.role !== "tool");
     return {
       id: f.id,
-      title: (title || firstUser?.text || "Session").split("\n")[0].slice(0, 140),
+      // Prompts relayed from other tools can start with XML-like tags; title the session by its first plain line.
+      title: (title || [firstUser, msgs.find((m) => m.role === "claude")].map((m) => m?.text.replace(/<[^>]*>/g, " ").split("\n").map((l) => l.trim()).find(Boolean)).find(Boolean) || "Session").slice(0, 120),
       updatedAt: new Date(f.mtime).toISOString(),
       total: msgs.length,
       messages: shown,

@@ -9,11 +9,14 @@
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--ink:#e8ebef;--mute:#98a2ae;--line:#2a3039;--ok:#4cc38a;--warn:#e0a03a;--bad:#f2766d;--accent:#7aa2ff;--chip:#222831}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
-header{padding:20px 16px 8px;max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+header{padding:20px 16px 8px;max-width:1500px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
 h1{font-size:22px;margin:0}
 .sub{color:var(--mute);font-size:13px}
-main{max-width:1200px;margin:0 auto;padding:8px 16px 48px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:12px 0 20px}
+main{max-width:1500px;margin:0 auto;padding:8px 16px 48px}
+.top{display:flex;gap:14px;align-items:flex-start;margin:12px 0 20px}.top .grid{flex:1;min-width:0;margin:0}.top #plan{flex:0 0 400px;position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto}.top #plan .plan{margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px}
+.grid .card{padding:9px 11px}.grid .card .sub{font-size:12px}.grid .big{font-size:17px}.grid .card{overflow-wrap:break-word}.grid .card h2{overflow-wrap:anywhere;font-size:15px}.grid .row{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin-top:6px}.grid .row b{display:inline;margin-right:5px}.grid .row small{display:inline;white-space:nowrap}.grid .row b{font-size:15px}.grid .row small{font-size:11px}.grid .row div{min-width:0}.grid .gitsel{padding:3px 6px;font-size:13px}
+@media (max-width:1000px){.top{flex-direction:column}.top #plan{flex:none;width:100%;position:static;max-height:none}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .card h2{font-size:16px;margin:0 0 2px}
 .big{font-size:24px;font-weight:650;line-height:1.2}
@@ -33,6 +36,7 @@ td.path{word-break:break-all;font:13px ui-monospace,Consolas,monospace}
 a{color:var(--accent)}
 .rbtn{font:inherit;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:5px 14px;border-radius:8px;cursor:pointer;margin-left:8px}
 .ask{border-left:4px solid var(--warn);background:var(--chip);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.plain{background:var(--chip);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;margin:6px 0;white-space:pre-wrap}.plain b{color:var(--ink)}
 .asktext{white-space:pre-wrap;word-break:break-word;margin-top:4px}
 .opt{font:inherit;border:1px solid var(--accent);background:var(--card);color:var(--accent);padding:4px 12px;border-radius:8px;cursor:pointer}
 .joblog{max-height:320px;overflow:auto;background:var(--chip);border-radius:8px;padding:10px;margin:0 0 10px}
@@ -41,6 +45,10 @@ textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid v
 #auto{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);margin-left:8px}
 .rbtn:disabled{opacity:.6;cursor:wait}
 .ibtn:disabled{opacity:.45;cursor:not-allowed}
+.gitsel{width:100%;min-width:0;max-width:100%;font:inherit;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer}
+.jump{cursor:pointer;border-radius:6px;padding:2px 4px;margin:-2px -4px}.jump:hover{background:var(--chip)}.jump:hover small{text-decoration:underline}
+.flash{animation:flash 1.5s}@keyframes flash{from{background:color-mix(in srgb,var(--warn) 35%,transparent)}to{background:transparent}}
+.gitsel:disabled{opacity:.6;cursor:wait}
 details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:6px 0}
 summary{cursor:pointer;font-weight:600}
 pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 2px}
@@ -84,6 +92,19 @@ body.locked{overflow:hidden}
 .filters button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:2px 9px;border-radius:99px;cursor:pointer}
 .filters button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
 .note{font-size:12px;color:var(--mute)}
+.focus{max-width:900px;margin:0 auto}
+.fitem{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
+.ftitle{font-weight:650;font-size:16px}.fabout{margin:6px 0;white-space:pre-wrap;word-break:break-word;color:var(--mute)}
+.fnext{margin-top:6px;padding:6px 10px;border-left:3px solid var(--accent);background:var(--chip);border-radius:6px}
+.working{display:flex;gap:12px;align-items:flex-start;border:2px solid var(--accent);border-radius:10px;background:var(--card);margin:12px 16px 0;padding:12px 14px}
+.spin{flex:none;width:18px;height:18px;margin-top:2px;border:3px solid var(--chip);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin.sm{display:inline-block;vertical-align:-2px;width:11px;height:11px;margin:0 2px 0 0;border-width:2px}
+.attn{margin:12px 16px 0;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
+.plan ol{margin:8px 0 0;padding-left:22px}.plan li{margin:6px 0}.plan li label{cursor:pointer}.plan li .meta{margin-left:6px}.plan li .ibtn{margin-left:8px;padding:2px 10px;font-size:13px}
+.plan li.done label{text-decoration:line-through;color:var(--mute)}.plan input{margin:0 6px 0 0;vertical-align:-2px}
+.attn ul{margin:6px 0 0;padding:0;list-style:none}.attn li{margin:4px 0}.attn li .meta{margin-left:6px}
 </style>
 </head>
 <body>
@@ -92,7 +113,7 @@ body.locked{overflow:hidden}
   <div class="sub" id="gen"></div>
 </header>
 <main>
-  <div class="grid" id="cards"></div>
+  <div class="top"><div class="grid" id="cards"></div><section id="plan" aria-label="Recommended actions"></section></div>
   <nav id="tabs"></nav>
   <section id="detail"></section>
 </main>
@@ -100,7 +121,7 @@ body.locked{overflow:hidden}
 <script>
 window.addEventListener("error", (e) => {
   const d = document.querySelector("#detail") || document.body;
-  d.insertAdjacentHTML("afterbegin", `<div class="empty bad">The dashboard hit an error: ${String(e.message).replace(/</g, "&lt;")} (line ${e.lineno}).</div>`);
+  d.insertAdjacentHTML("afterbegin", `<div class="empty bad">Something on this page broke: ${String(e.message).replace(/</g, "&lt;")} (line ${e.lineno}).<br><b>What to do:</b> click Refresh now. If it keeps happening, send a screenshot of this message to Claude.</div>`);
 });
 const DATA = /*__DATA__*/null;
 if (!DATA) throw new Error("This is the blank page-template.html, not the dashboard. Run refresh.cmd.");
@@ -112,30 +133,82 @@ const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", da
 const md = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
 // The open project is kept in the address (#p=KEY) so a reload comes back to it.
 let tab = (() => { const k = decodeURIComponent((location.hash.match(/^#p=(.+)$/) || [])[1] || ""); return DATA.projects.some((p) => p.key === k) ? k : "overview"; })();
-let view = "messages", ghFilter = "all";
+let view = "messages", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
 const AUTO_KEY = "projdash-auto";
 const getAuto = () => { try { return localStorage.getItem(AUTO_KEY) || "0"; } catch { return "0"; } };
 $("#gen").innerHTML = `<span id="stamp"></span> <select id="auto" aria-label="Auto refresh"><option value="0">Auto-refresh off</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select><button id="refresh" class="rbtn">Refresh now</button>`;
-$("#stamp").textContent = "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ").";
-async function refresh(manual) {
+const stamp = (t) => { $("#stamp").textContent = t; };
+const pulled = () => DATA.generatedAt ? "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ")." : "Loading project data...";
+stamp(pulled());
+const offline = "The dashboard server isn't running, so the data can't be updated.\nWhat to do: double-click refresh.cmd (or update.cmd) in the project-dashboard folder, then try again.";
+// Refresh asks the server to collect again and returns at once with the run that will hold the new data;
+// watchBuild() then fills in each project as it arrives.
+async function refresh() {
+  if (location.protocol !== "http:") { location.href = SERVER; return; } // a file copy moves to the live page
   const b = $("#refresh");
   b.disabled = true; b.textContent = "Refreshing...";
   try {
-    const onServer = location.protocol === "http:";
-    const r = await fetch((onServer ? "" : SERVER) + "/refresh", { method: "POST" });
+    const r = await fetch("/refresh", { method: "POST" });
     if (!r.ok) throw new Error(await r.text());
-    if (onServer) location.reload(); else location.href = SERVER; // a file copy moves to the live page
+    const { run } = await r.json();
+    watchBuild();
+    return run;
   } catch (err) {
     b.disabled = false; b.textContent = "Refresh now";
-    $("#stamp").textContent = location.protocol === "http:" ? "Refresh failed: " + err.message : "The local server is not running. Double-click refresh.cmd, then try again.";
+    // "Failed to fetch" means nothing answered at all: the dashboard server has stopped, not that a refresh went wrong.
+    stamp(/failed to fetch|networkerror/i.test(err.message) ? offline : /What to do:/.test(err.message) ? err.message : "Refresh failed: " + err.message + "\nWhat to do: click Refresh now again; if it keeps failing, send a screenshot to Claude.");
   }
 }
-$("#refresh").onclick = () => refresh(true);
+$("#refresh").onclick = () => refresh();
 $("#auto").value = getAuto();
-$("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} location.reload(); };
-if (getAuto() !== "0" && location.protocol === "http:") setTimeout(() => refresh(false), Number(getAuto()) * 60000);
+$("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
+let autoT = 0;
+function scheduleAuto() { clearTimeout(autoT); if (getAuto() !== "0" && location.protocol === "http:") autoT = setTimeout(refresh, Number(getAuto()) * 60000); }
+
+// Progressive loading: the server collects a few projects at a time and hands each over as soon as it is ready.
+// Each one replaces its card straight away; the action plan is worked out once every project is in.
+let SEQ = 0, RUN = 0, building = false, doneCount = 0, watching = null;
+const fresh = new Set(), waiters = [];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Resolves once the project has data from the given run (or the update stops), so a Git action can finish its clock.
+const waitFor = (key, run) => new Promise((resolve) => waiters.push({ key, run, resolve }));
+function redraw(keys) {
+  if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
+  $("#detail").innerHTML = overview();
+  drawPlan();
+  if (tab !== "overview" && keys.includes(tab)) render();
+}
+function watchBuild() {
+  if (!live) return Promise.resolve();
+  return (watching ||= (async () => {
+    for (;;) {
+      let pr;
+      try { pr = await (await fetch("/progress?since=" + SEQ, { cache: "no-store" })).json(); }
+      catch { stamp(offline); break; }
+      if (pr.run !== RUN) { RUN = pr.run; fresh.clear(); }
+      const keys = [];
+      for (const np of pr.projects) {
+        SEQ = Math.max(SEQ, np.seq); keys.push(np.key);
+        const i = DATA.projects.findIndex((p) => p.key === np.key);
+        if (i >= 0) DATA.projects[i] = np; else DATA.projects.push(np);
+        if (np.run === pr.run) fresh.add(np.key);
+        for (const w of waiters.filter((w) => w.key === np.key && np.run >= w.run)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(); }
+      }
+      building = pr.running || pr.queued; doneCount = pr.done;
+      if (building) { stamp(`Updating... ${pr.done} of ${pr.total} projects loaded.`); if (keys.length || !planReady) redraw(keys); await sleep(1000); continue; }
+      if (pr.generatedAt) DATA.generatedAt = pr.generatedAt;
+      stamp(pr.error || pulled());
+      fresh.clear(); updatePlan(); redraw(keys);
+      break;
+    }
+    building = false; watching = null;
+    waiters.splice(0).forEach((w) => w.resolve());
+    const b = $("#refresh"); b.disabled = false; b.textContent = "Refresh now";
+    scheduleAuto();
+  })());
+}
 
 // Outstanding = open GitHub issues + open PRs + the newest "still open" list from PROJECT_STATUS.md.
 // Ahead AND behind means local and remote have split (often squash-merged PRs), so "unpushed" is not a real count.
@@ -147,7 +220,12 @@ const counts = (p) => ({
   prs: p.remote.prs.length,
   todo: p.doc?.totalOpen ?? 0,
 });
+// Why a project's folder couldn't be read, and what to do about it.
+const folderProblem = (p) => /cannot change to|no such file/i.test(p.error) ? [`The folder ${p.dir} wasn't found.`, "Check the drive is connected and the folder exists, or correct its path in projects.mjs."]
+  : /not a git repository/i.test(p.error) ? [`${p.dir} isn't a git repository.`, "Correct the path in projects.mjs, or ask Claude to set the folder up with git."]
+  : ["Git couldn't read this project's folder.", "Click Refresh now. If it keeps failing, send a screenshot of this card to Claude."];
 function status(p) {
+  if (p.loading) return ["Loading...", ""];
   if (p.error) return ["Git error", "bad"];
   const c = counts(p);
   if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
@@ -160,11 +238,16 @@ function status(p) {
 function cards() {
   $("#cards").innerHTML = DATA.projects.map((p) => {
     const [label, cls] = status(p), c = counts(p);
-    const b = badge(p.key) || (asking(p).length ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : "");
+    if (p.loading) return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Collecting git, GitHub and Claude data for this project.</div></div>`;
+    const upd = building && !fresh.has(p.key) ? `<span class="pill"><span class="spin sm" aria-hidden="true"></span> Updating</span>` : "";
+    const waiting = asking(p).length && JOBS[p.key]?.status !== "running";
+    // A question waiting for the user outranks a "done" badge; it comes with a button that opens the answer box.
+    const b = [upd, waiting ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : badge(p.key)].filter(Boolean).join(" ");
     return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
-      <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : esc(p.error)}</div>
-      <div class="row"><div><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div title="Local and remote have split"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : `<div><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div><b>${c.prs}</b><small>Open PRs</small></div></div>
+      <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
+      <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
+      ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
       ${p.git ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
@@ -175,50 +258,97 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { const b = e.target.closest("[data-git]"); if (b) { gitAction(b); return; } const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
+$("#cards").onclick = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
+$("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
 $("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
-// Commit, Push and Commit & push on every card; a button is greyed out (with the reason on hover) when it has nothing to do.
+// A Git dropdown on every card: Commit, Push, Commit & push, Pull, and Fix diverged (pull, then push).
+// A choice with nothing to do is greyed out with the reason.
 // Push is a plain `git push` to the upstream, never a force push, so it is off when the branch is behind or has diverged.
 // State lives here, not in the DOM, because cards() redraws every few seconds.
 const gitBusy = {}, gitNote = {};
 function gitButtons(p, c) {
-  const pushBlock = diverged(p) ? "Local and remote have diverged. Pull and merge first." : p.git.behind ? "The remote has newer commits. Pull first." : "";
-  const btn = (act, label, why) => `<button class="${why ? "ibtn" : "rbtn"}" style="margin:0" data-git="${act}" data-key="${esc(p.key)}" ${why || gitBusy[p.key] ? "disabled" : ""} ${why ? `title="${esc(why)}"` : ""}>${label}</button>`;
+  const pushBlock = diverged(p) ? "diverged" : p.git.behind ? "pull first" : "";
+  const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
   const note = gitNote[p.key];
-  return `<div class="tools" style="margin:10px 0 0">
-    ${btn("commit", "Commit", c.uncommitted ? "" : "Nothing to commit")}
-    ${btn("push", "Push", pushBlock || (c.unpushed ? "" : "Nothing to push"))}
-    ${btn("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "Nothing to commit"))}
-  </div>${note ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+  return `<div style="margin:10px 0 0"><select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
+    <option value="">Git...</option>
+    ${opt("commit", "Commit", c.uncommitted ? "" : "none")}
+    ${opt("push", "Push", pushBlock || (c.unpushed ? "" : "none"))}
+    ${opt("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "none"))}
+    ${opt("pull", "Pull", !p.git.upstream ? "no remote" : !p.git.behind ? "up to date" : c.uncommitted ? "commit first" : "")}
+    ${opt("sync", "Fix diverged", !p.git.upstream ? "no remote" : !(p.git.behind && p.git.ahead) ? "not diverged" : c.uncommitted ? "commit first" : "")}
+  </select></div>${note?.text ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
 }
-async function gitAction(btn) {
-  const p = DATA.projects.find((x) => x.key === btn.dataset.key), act = btn.dataset.git, g = p.git;
-  const say = (text, bad) => { gitNote[p.key] = { text, bad }; cards(); };
+async function gitAction(key, act) {
+  const p = DATA.projects.find((x) => x.key === key), g = p.git;
+  const say = (text, bad) => { gitNote[p.key] = { text, bad }; if (!document.activeElement?.matches?.("#cards select")) cards(); };
+  say(""); // a new choice clears the last result
   const files = g.files.map((f) => `${f.kind}: ${f.path}`), list = (a) => a.slice(0, 15).join("\n") + (a.length > 15 ? `\n...and ${a.length - 15} more` : "");
   let message = "";
-  if (act !== "push") {
+  if (act === "commit" || act === "both") {
     message = prompt(`${act === "both" ? "Commit and push" : "Commit"} all ${files.length} changed file(s) in ${p.key} on ${g.branch}:\n\n${list(files)}\n\nCommit message:`, `Update ${files.length} file${files.length > 1 ? "s" : ""}`);
     if (message === null) return;
-    if (!message.trim()) { say("A commit message is needed.", true); return; }
-  } else if (!confirm(`Push ${g.unpushed.length} commit(s) on ${g.branch} to ${g.upstream || "origin"} for ${p.key}?\n\n${list(g.unpushed)}`)) return;
-  if (location.protocol !== "http:") { say("This needs the local server. Double-click refresh.cmd, then try again.", true); return; }
-  gitBusy[p.key] = true;
-  say(act === "commit" ? "Committing..." : act === "push" ? "Pushing..." : "Committing and pushing...");
+    if (!message.trim()) { say("The commit message was empty, so nothing was committed.\nWhat to do: pick the option again and type a short message describing the change.", true); return; }
+  } else if (act === "push" && !confirm(`Push ${g.unpushed.length} commit(s) on ${g.branch} to ${g.upstream || "origin"} for ${p.key}?\n\n${list(g.unpushed)}`)) return;
+  else if (act === "pull" && !confirm(`Pull ${g.behind} commit(s) from ${g.upstream} into ${p.key}?${g.ahead ? `\n\nYour ${g.ahead} local commit(s) are replayed on top.` : ""}`)) return;
+  else if (act === "sync" && !confirm(`Fix the diverged ${p.key}?\n\n1. Pull GitHub's ${g.behind} commit(s) and replay your ${g.ahead} local commit(s) on top (any already on GitHub are dropped).\n2. Push the result.\n\nIf the two sides conflict, the pull is undone and nothing changes.\n\nYour local commits:\n${list(g.unpushed)}`)) return;
+  if (location.protocol !== "http:") { say("This page was opened as a file, so it can't run git.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).", true); return; }
+  // A running clock shows from the press until the page reloads, for the git step and then the dashboard rebuild.
+  const t0 = Date.now();
+  let step = { commit: "Committing", push: "Pushing", both: "Committing and pushing", pull: "Pulling", sync: "Fixing diverged: pulling, then pushing" }[act];
+  const tick = () => { const s = Math.floor((Date.now() - t0) / 1000); say(`\u23F1 ${step}... ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`); };
+  gitBusy[p.key] = true; tick();
+  const timer = setInterval(tick, 1000);
   try {
     const r = await fetch("/git/" + encodeURIComponent(p.key), { method: "POST", body: JSON.stringify({ action: act, message }) });
-    const text = await r.text();
-    if (!r.ok) throw new Error(text);
-    location.reload(); // the server rebuilt the data
-  } catch (err) { gitBusy[p.key] = false; say("Failed: " + err.message, true); }
+    if (!r.ok) throw new Error(await r.text());
+    step = "Done. Updating this card"; tick();
+    const run = await refresh();
+    if (run) await waitFor(p.key, run);
+    clearInterval(timer); gitBusy[p.key] = false;
+    say("\u2713 " + { commit: "Committed", push: "Pushed", both: "Committed and pushed", pull: "Pulled", sync: "Fixed: pulled, then pushed" }[act] + ". The card shows the new state.");
+  } catch (err) { clearInterval(timer); gitBusy[p.key] = false; say(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? "The dashboard server isn't running, so nothing was done.\nWhat to do: double-click refresh.cmd in the project-dashboard folder, then try again." : err.message + "\nWhat to do: click Refresh now and try again. If it keeps failing, send a screenshot of this message to Claude.", true); }
 }
 
 // Selecting a project opens it over the whole window and asks the browser for real full screen too.
-function openProject(k) {
-  tab = k; view = "messages";
+// A count on a card (Issues, Open PRs, To commit, To push) opens the project's Details at that list, expanded.
+let openIssues = false; // kept in state: entering full screen redraws the view
+// A count on a card (Issues, Open PRs, To commit, To push) opens just that list, each item with its next step.
+let focusKind = "";
+function openProject(k, jump) {
+  tab = k; view = jump ? "focus" : "messages"; focusKind = jump || "";
   history.replaceState(null, "", k === "overview" ? location.pathname : "#p=" + encodeURIComponent(k));
   if (k !== "overview" && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   tabs(); render();
+}
+function focusView(p) {
+  const g = p.git, r = p.remote, full = (n) => (r.activity || []).find((i) => (i.type === "pr" || i.type === "issue") && i.number === n);
+  const gh = (url, label) => `<a class="rbtn" style="margin:0;text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>`;
+  const card = (title, meta, about, next, button) => `<div class="fitem"><div class="ftitle">${title}</div>${meta ? `<div class="meta">${meta}</div>` : ""}${about ? `<div class="fabout">${md(about)}</div>` : ""}<div class="fnext"><b>Next step:</b> ${next}</div>${button ? `<div style="margin-top:8px">${button}</div>` : ""}</div>`;
+  const short = (t) => { t = String(t || "").replace(/<!--[\s\S]*?-->/g, "").trim(); return t.length > 280 ? t.slice(0, 280) + " …" : t; };
+  let head = "", body = "";
+  if (focusKind === "prs") {
+    head = `Open pull requests (${r.prs.length})`;
+    body = r.prs.map((x) => { const f = full(x.number); return card(`#${x.number} ${esc(x.title)}${x.isDraft ? ` <span class="pill">draft</span>` : ""}`,
+      `${esc(f?.author || "")}${f?.created ? " · opened " + fmt(f.created) : ""} · updated ${ago(x.updatedAt)}`, short(f?.body),
+      x.isDraft ? "It's a draft, so it's still being worked on. Nothing to do yet." : "Open it on GitHub, check the changes, then press <b>Merge</b> if it looks right, or <b>Close</b> it if it's no longer needed.",
+      gh(x.url, "Open on GitHub")); }).join("") || `<div class="empty">No open pull requests. Nothing to do.</div>`;
+  } else if (focusKind === "issues") {
+    head = `Open issues (${r.issues.length})`;
+    body = r.issues.map((i) => card(`#${i.number} ${esc(i.title)}`, `updated ${ago(i.updatedAt)}${i.labels.length ? " · " + i.labels.map(esc).join(", ") : ""}`, short(i.body),
+      "Read it on GitHub. If it still matters, ask Claude in this project to fix it; if not, close it.", gh(i.url, "Open on GitHub"))).join("") || `<div class="empty">No open issues. Nothing to do.</div>`;
+  } else if (focusKind === "commit") {
+    head = `Changed files not committed (${g?.files.length || 0})`;
+    body = g?.files.length ? card(`${g.files.length} file(s)`, "", g.files.slice(0, 30).map((f) => `- \`${f.path}\` (${f.kind})`).join("\n") + (g.files.length > 30 ? `\n- and ${g.files.length - 30} more` : ""),
+      "Close this view and pick <b>Commit</b> (or <b>Commit &amp; push</b>) in the card's Git dropdown.", "") : `<div class="empty">Nothing to commit.</div>`;
+  } else {
+    const div = diverged(p);
+    head = div ? `Diverged: ${g.ahead} commit(s) only here, ${g.behind} only on GitHub` : `Commits not pushed (${g?.unpushed.length || 0})`;
+    body = g?.unpushed.length || g?.behind ? card(div ? "Your local commits" : `${g.unpushed.length} commit(s)`, "", g.unpushed.map((c) => `- ${c.slice(8)}`).join("\n"),
+      div ? "Close this view and pick <b>Fix diverged</b> in the card's Git dropdown." : g.behind ? "Close this view and pick <b>Pull</b> in the card's Git dropdown." : "Close this view and pick <b>Push</b> in the card's Git dropdown.", "") : `<div class="empty">Nothing to push.</div>`;
+  }
+  return `<div class="focus"><div class="tools" style="justify-content:space-between"><h3 style="margin:0">${head}</h3><button class="ibtn" data-view="messages">Show all messages</button></div>${body}</div>`;
 }
 function closeProject() {
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -226,11 +356,19 @@ function closeProject() {
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && tab !== "overview" && !document.fullscreenElement) closeProject(); });
 
+const prCell = (pr) => pr ? `<a href="${esc(pr.url)}" target="_blank" rel="noopener">#${pr.number}</a> <span class="pill ${pr.state === "merged" ? "ok" : pr.state === "closed" ? "bad" : "warn"}">${esc(pr.state)}</span><div class="meta">${esc(pr.title)}</div>` : `<span class="meta">No PR</span>`;
+// What is waiting: the unpushed commit messages, then the changed files.
+function describe(p) {
+  const g = p.git, more = (n, shown) => n > shown ? `<li class="meta">and ${n - shown} more</li>` : "";
+  const commits = g.unpushed.slice(0, 5).map((c) => `<li>${esc(c.slice(8))}</li>`).join("") + more(g.unpushed.length, 5);
+  const files = g.files.slice(0, 5).map((f) => `<li><code>${esc(f.path)}</code> <span class="meta">${f.kind}</span></li>`).join("") + more(g.files.length, 5);
+  return (commits ? `<div class="meta">Commits</div><ul class="items">${commits}</ul>` : "") + (files ? `<div class="meta">Changed files</div><ul class="items">${files}</ul>` : "") || "-";
+}
 function overview() {
   const commit = DATA.projects.filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
   const issues = DATA.projects.flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
-  return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
-    ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
+  return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>PR</th><th>Description</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
+    ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${prCell(p.branchPr)}</td><td>${describe(p)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
     `<h3>Open issues and pull requests</h3>` + (issues.length ? `<div class="tbl"><table><tr><th>Project</th><th>Type</th><th>Title</th><th>Updated</th></tr>
     ${issues.map((i) => `<tr><td>${esc(i.p.key)}</td><td>${i.t}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number} ${esc(i.title)}</a></td><td>${ago(i.updatedAt)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No open issues or pull requests.</div>`);
 }
@@ -238,11 +376,11 @@ function overview() {
 const CMDS = Object.fromEntries(DATA.projects.filter((p) => p.cmd).map((p) => [p.key, p.cmd]));
 let JOBS = {};
 const live = location.protocol === "http:"; // replies need the local server (refresh.cmd)
-const clock = (j) => { const s = Math.round(((j.endedAt || Date.now()) - j.startedAt) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+const clock = (j) => { const s = Math.round(((j.endedAt || Date.now()) - (j.lastStart || j.startedAt)) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
 const badge = (key) => {
   const j = JOBS[key]; if (!j) return "";
   const what = j.kind === "reply" ? "Claude" : "Checkpoint";
-  return j.status === "running" ? `<span class="pill warn">&#9201; ${what} working ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : j.status === "done" ? `<span class="pill ok">&#10003; ${what} done</span>` : `<span class="pill bad">&#10007; ${what} failed</span>`;
+  return j.status === "running" ? `<span class="pill warn"><span class="spin sm" aria-hidden="true"></span> Claude is working ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : j.status === "done" ? `<span class="pill ok">&#10003; ${what} done</span>` : `<span class="pill bad">&#10007; ${what} failed</span>`;
 };
 // Everything in a project that is waiting on the user: a stopped headless job, and recent sessions that ended on a question.
 function asking(p) {
@@ -251,7 +389,8 @@ function asking(p) {
   for (const s of p.sessions || []) {
     const last = [...s.messages].reverse().find((m) => m.role === "claude");
     // A reply sent from here after Claude's question supersedes it; the job above carries the new state.
-    if (!s.asking || (j && j.sessionId === s.id && j.startedAt >= Date.parse(last?.at || s.updatedAt) - 1000)) continue;
+    const repliedAt = j?.answered?.[s.id] || (j && j.sessionId === s.id ? j.startedAt : 0);
+    if (!s.asking || repliedAt >= Date.parse(last?.at || s.updatedAt) - 1000) continue;
     out.push({ sessionId: s.id, title: s.title, text: last?.text || "", at: last?.at || s.updatedAt, denials: [] });
   }
   return out;
@@ -264,19 +403,20 @@ async function poll() {
     const finished = Object.keys(next).some((k) => JOBS[k]?.status === "running" && next[k].status !== "running");
     const changed = sig(next) !== sig(JOBS);
     JOBS = next;
-    if (finished) { setTimeout(() => location.reload(), 4000); return; } // the server is rebuilding the data
-    cards();
+    if (finished) watchBuild(); // the server is collecting the new commit/push state
+    if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
     if (changed && tab !== "overview") { render(); return; }
     // Same state: refresh only the log and clock so a half-typed reply is not wiped.
     const log = $("#joblog"), b = $("#jobbadge");
     if (log && JOBS[tab]) { const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8; log.textContent = JOBS[tab].log; if (atEnd) log.scrollTop = log.scrollHeight; }
     if (b) b.innerHTML = badge(tab);
+    const wc = $("#workclock"); if (wc && JOBS[tab]) wc.textContent = clock(JOBS[tab]);
   } catch {}
 }
 
 // Reply boxes. Ctrl+Enter sends; the box's button says where the text goes.
 let boxN = 0;
-const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" data-msg="${id}"></div>`; };
+const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" style="white-space:pre-wrap" data-msg="${id}"></div>`; };
 document.addEventListener("keydown", (e) => { if (e.target.tagName === "TEXTAREA" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.target.closest(".tools")?.querySelector("button.send")?.click(); });
 document.addEventListener("click", async (e) => {
   const opt = e.target.closest("[data-pick]");
@@ -286,7 +426,7 @@ document.addEventListener("click", async (e) => {
   const box = btn.dataset.box && document.getElementById(btn.dataset.box), text = (box?.value || "").trim(), allow = btn.dataset.allow === "1";
   const say = (m) => { const n = document.querySelector(`[data-msg="${btn.dataset.box}"]`); if (n) n.textContent = m; };
   if (!allow && !text) { box?.focus(); return; }
-  if (!live) { say("Replies need the local server. Double-click refresh.cmd, then reply from http://127.0.0.1:8788."); return; }
+  if (!live) { say("This page was opened as a file, so it can't send replies.\nWhat to do: double-click refresh.cmd and reply from the page it opens (http://127.0.0.1:8788)."); return; }
   btn.disabled = true;
   try {
     const gh = btn.dataset.send === "gh";
@@ -297,12 +437,44 @@ document.addEventListener("click", async (e) => {
     if (box) box.value = "";
     if (gh) { say(""); btn.closest(".ev")?.insertAdjacentHTML("beforeend", `<div class="note ok">Posted. It shows here after the next refresh.</div>`); btn.disabled = false; }
     else { await poll(); render(); }
-  } catch (err) { btn.disabled = false; say("Could not send: " + err.message); }
+  } catch (err) { btn.disabled = false; say(/What to do:/.test(err.message) ? "Not sent. " + err.message : /failed to fetch|networkerror/i.test(err.message) ? "Not sent: the dashboard server isn't running.\nWhat to do: double-click refresh.cmd in the project-dashboard folder, then send again." : "Not sent: " + err.message + "\nWhat to do: try again. If it keeps failing, send a screenshot of this message to Claude."); }
 });
 const denialText = (d) => d.tool_name + (d.tool_input?.command ? ": " + d.tool_input.command : d.tool_input?.file_path ? ": " + d.tool_input.file_path : "");
 
 // The USER INPUT NEEDED block at the top of a project, in the format the project instructions ask for.
+// While Claude runs for this project nothing can be sent to it, so say so plainly instead of offering a reply box.
+function workingPanel(p) {
+  const j = JOBS[p.key];
+  if (j?.status !== "running") return "";
+  return `<div class="working" role="status"><span class="spin" aria-hidden="true"></span><div><b>Claude is working${j.kind === "reply" ? " on your answer" : j.kind === "checkpoint" ? ` on the checkpoint` : ""}</b> <span id="workclock" class="meta">${clock(j)}</span>
+    <div class="meta">You can't send anything until it finishes. This page updates by itself; if Claude asks something else, it shows up here.</div>
+    <details><summary>Watch what it's doing</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details></div></div>`;
+}
+// Plain-English summaries of Claude's questions, written by the server and fetched once per message.
+const SUMS = {};
+const sumKey = (t) => { let h = 0; for (const c of String(t)) h = (h * 31 + c.charCodeAt(0)) | 0; return "s" + (h >>> 0).toString(36) + String(t).length; };
+const sumHtml = (t) => { const s = SUMS[sumKey(t)]; return !s || s.status === "working" ? `<span class="spin sm" aria-hidden="true"></span> <span class="meta">Writing a plain summary...</span>` : s.status === "failed" ? esc(s.text) : esc(s.text).replace(/^(What happened:|What Claude needs from you:|Your choices:|Recommended:)/gm, "<b>$1</b>"); };
+const sumBusy = new Set();
+async function fetchSummaries(p) {
+  if (!live) return;
+  for (const it of asking(p)) {
+    const k = sumKey(it.text);
+    if ((SUMS[k] && SUMS[k].status !== "working") || sumBusy.has(k)) continue;
+    sumBusy.add(k);
+    for (let n = 0; n < 90; n++) {
+      try {
+        const r = await fetch("/summary", { method: "POST", body: JSON.stringify({ text: it.text }) });
+        SUMS[k] = r.ok ? await r.json() : { status: "failed", text: await r.text() };
+      } catch { SUMS[k] = { status: "failed", text: "The dashboard server isn't running, so no summary could be written.\nWhat to do: double-click refresh.cmd in the project-dashboard folder." }; }
+      document.querySelectorAll(`[data-sum="${k}"]`).forEach((el) => { el.innerHTML = sumHtml(it.text); });
+      if (SUMS[k].status !== "working") break;
+      await sleep(2000);
+    }
+    sumBusy.delete(k);
+  }
+}
 function needPanel(p) {
+  if (JOBS[p.key]?.status === "running") return workingPanel(p);
   const items = asking(p);
   if (!items.length) return "";
   return `<div class="need" role="alert"><div class="needhead">&#128680; USER INPUT NEEDED &#128680;</div>${items.map((it) => {
@@ -312,7 +484,9 @@ function needPanel(p) {
     const rec = (it.text || "").match(/^.*\brecommend.*$/im)?.[0];
     return `<div class="needitem">
       <div><b>Action Required:</b> Claude is waiting on you in <b>${esc(it.title)}</b> <span class="meta">· ${fmt(it.at)}</span></div>
-      <div class="asktext">${md(it.text)}</div>
+      <div class="plain" data-sum="${sumKey(it.text)}">${sumHtml(it.text)}</div>
+      <div class="meta">Claude's original message:</div>
+      ${it.text.length > 600 ? `<div class="asktext">${md("…" + it.text.slice(-600))}</div><details><summary>Show the whole message</summary><div class="asktext">${md(it.text)}</div></details>` : `<div class="asktext">${md(it.text)}</div>`}
       ${it.denials.length ? `<div><b>Claude was blocked from:</b></div><ul class="items">${it.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" data-send="claude" data-allow="1" data-box="${id}">Allow these and continue</button>` : ""}
       ${opts.length ? `<div class="tools"><b>Options:</b> ${opts.map((o) => `<button class="opt" data-pick="${o}" data-for="${id}">Option ${o}</button>`).join("")}</div>` : ""}
       ${rec ? `<div><b>Recommendation:</b> ${md(rec.replace(/^[\s*#>-]+/, ""))}</div>` : ""}
@@ -325,7 +499,7 @@ function jobPanel(key) {
   const j = JOBS[key];
   if (!j) return "";
   return `<div class="card" style="margin:0 0 10px"><div class="tools" style="margin:0 0 6px"><b>${j.kind === "reply" ? "Reply sent from this dashboard" : "Checkpoint run"}</b> <span id="jobbadge">${badge(key)}</span> <span class="meta">${fmt(new Date(j.startedAt).toISOString())}</span></div>
-    <details ${j.status === "running" ? "open" : ""}><summary>Activity log</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details>
+    <details><summary>Activity log</summary><pre ${j.status === "running" ? "" : `id="joblog"`} class="joblog">${esc(j.log || "Starting...")}</pre></details>
     ${j.status !== "running" && j.status !== "waiting" && j.sessionId ? `<details><summary>Continue this conversation</summary>${replyBox(`data-send="claude"`, "Message Claude")}</details>` : ""}
   </div>`;
 }
@@ -340,8 +514,8 @@ async function checkpoint(key) {
     if (!live) { location.href = SERVER + "/#p=" + encodeURIComponent(key); return; }
     await poll(); render();
   } catch {
-    try { await navigator.clipboard.writeText(CMDS[key]); msg.textContent = "Server not running. Copied " + CMDS[key] + ". Paste it into Claude Code in that project."; }
-    catch { msg.textContent = "Server not running. Run " + CMDS[key] + " in Claude Code in that project."; }
+    try { await navigator.clipboard.writeText(CMDS[key]); msg.textContent = "The dashboard server isn't running, so the checkpoint didn't start. What to do: double-click refresh.cmd, or paste " + CMDS[key] + " (now copied) into Claude Code in that project."; }
+    catch { msg.textContent = "The dashboard server isn't running, so the checkpoint didn't start. What to do: double-click refresh.cmd, or run " + CMDS[key] + " in Claude Code in that project."; }
   }
 }
 
@@ -351,18 +525,23 @@ function claudeCol(p) {
   const waits = new Set(asking(p).filter((x) => !x.job).map((x) => x.sessionId));
   const sessions = (p.sessions || []).map((s, i) => `<details class="sess card" style="margin:0 0 8px" ${i === 0 || waits.has(s.id) ? "open" : ""}>
       <summary>${esc(s.title)} ${waits.has(s.id) ? `<span class="pill bad">Needs input</span>` : ""}<div class="meta">${fmt(s.updatedAt)} · ${s.total} messages${s.total > s.messages.length ? `, newest ${s.messages.length} shown` : ""}</div></summary>
-      ${s.messages.map((m) => m.role === "tool" ? `<div class="msg tool">&#8250; ${esc(m.text)}</div>` : `<div class="msg ${m.role}"><div class="meta">${who[m.role]} · ${fmt(m.at)}</div><div class="txt">${md(m.text)}</div></div>`).join("")}
+      ${s.messages.filter((m) => showTools || m.role !== "tool").map((m) => m.role === "tool" ? `<div class="msg tool">&#8250; ${esc(m.text)}</div>` : `<div class="msg ${m.role}"><div class="meta">${who[m.role]} · ${fmt(m.at)}</div><div class="txt">${md(m.text)}</div></div>`).join("")}
       ${waits.has(s.id) ? `<div class="note warn">Claude is waiting on you. Answer in the USER INPUT NEEDED box above.</div>` : `<details><summary>Reply to this session</summary>${replyBox(`data-send="claude" data-session="${esc(s.id)}"`, "Message Claude")}<div class="note">Sends with <code>claude --resume</code> in the background. Avoid this while the same session is open in a terminal.</div></details>`}
     </details>`).join("");
   return jobPanel(p.key) + (sessions || `<div class="empty">No Claude Code sessions found for <code>${esc(p.dir)}</code>.</div>`);
 }
 
 // GitHub column: one newest-first timeline of issues, PRs, comments, commits and Actions runs.
-const GH_TYPES = { all: "All", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
+const GH_TYPES = { attention: "Needs attention", all: "All activity", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
+const failedRun = (i) => i.type === "run" && /fail|cancel|timed|startup/.test(i.state || "");
+// A failure only needs attention while it is that workflow's newest run; a later green run has fixed it.
+const openFailures = (p) => { const seen = new Set(); return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); return failedRun(i); }); };
+const openItem = (i) => (i.type === "issue" || i.type === "pr") && i.state !== "closed" && i.state !== "merged";
 function ghCol(p) {
   const r = p.remote;
   if (!r.url) return `<div class="empty">No GitHub repo for this project.</div>`;
-  const list = (r.activity || []).filter((i) => ghFilter === "all" || i.type === ghFilter || (ghFilter === "talk" && (i.type === "issue" || i.type === "pr")));
+  const fails = openFailures(p);
+  const list = (r.activity || []).filter((i) => ghFilter === "all" || i.type === ghFilter || (ghFilter === "talk" && (i.type === "issue" || i.type === "pr")) || (ghFilter === "attention" && (openItem(i) || fails.includes(i))));
   const stateCls = (s) => /fail|cancel|timed|startup/.test(s) ? "bad" : /success|merged|closed|completed/.test(s) ? "ok" : "warn";
   const label = (i) => i.type === "issue" ? `Issue #${i.number}` : i.type === "pr" ? `PR #${i.number}` : i.type === "comment" ? "Comment" : i.type === "commit" ? `Commit ${esc(i.sha)}` : "Action";
   return list.map((i) => `<div class="ev">
@@ -370,8 +549,78 @@ function ghCol(p) {
       <div class="meta">${esc(i.author || "")} · ${fmt(i.at)}${i.created && i.created !== i.at ? " · opened " + fmt(i.created) : ""}</div>
       ${i.body ? `<details ${i.type === "comment" ? "open" : ""}><summary>Message</summary><div class="asktext">${md(i.body)}</div></details>` : ""}
       ${i.number && (i.type !== "issue" && i.type !== "pr" || i.state !== "closed") ? `<details><summary>Reply on GitHub</summary>${replyBox(`data-send="gh" data-number="${i.number}"`, `Comment on #${i.number}`, "Post comment")}</details>` : ""}
-    </div>`).join("") || `<div class="empty">No GitHub activity${ghFilter === "all" ? "" : " of this kind"}.</div>`;
+    </div>`).join("") || `<div class="empty">${ghFilter === "attention" ? "Nothing on GitHub needs you: no open issues or PRs, and no Actions workflow whose latest run failed. Pick All activity to see everything." : `No GitHub activity${ghFilter === "all" ? "" : " of this kind"}.`}</div>`;
 }
+
+// What needs doing in a project, worked out from the data, most urgent first. Each item says what to do, and the
+// action plan (plan: true) gives it a checkbox and a button. ids are stable, so an item that drops out of the data
+// after the fix is ticked off.
+function todo(p) {
+  const g = p.git, c = counts(p), items = [], k = p.key;
+  const add = (pri, cls, id, what, todo, btn, plan = true) => items.push({ id: k + "|" + id, key: k, pri, cls, what, todo, btn, plan });
+  if (p.loading) return [];
+  const n = JOBS[k]?.status === "running" ? 0 : asking(p).length;
+  if (JOBS[k]?.status === "running") add(9, "warn", "running", "Claude is working on this project right now.", "Wait for it to finish; the page updates by itself.", null, false);
+  if (n) add(0, "bad", "answer", `Claude is waiting for your answer${n > 1 ? ` in ${n} places` : ""}.`, "Open the project and answer in the red box.", { label: "Answer", open: "" });
+  if (p.error) add(1, "bad", "folder", esc(folderProblem(p)[0]), "What to do: " + folderProblem(p)[1], null);
+  else {
+    if (c.uncommitted) add(2, "warn", "commit", `${c.uncommitted} changed file${c.uncommitted > 1 ? "s" : ""} not committed.`, "Commit them (Git dropdown on the card).", { label: "Commit", git: "commit" });
+    if (diverged(p)) add(3, "warn", "sync", `Diverged: ${g.ahead} commit(s) only on this PC, ${g.behind} only on GitHub.`, c.uncommitted ? "Commit first, then Fix diverged." : "Pick Fix diverged (pulls, then pushes).", c.uncommitted ? null : { label: "Fix diverged", git: "sync" });
+    else if (g.behind) add(3, "warn", "pull", `GitHub has ${g.behind} newer commit(s) this PC doesn't have.`, c.uncommitted ? "Commit first, then Pull." : "Pull them.", c.uncommitted ? null : { label: "Pull", git: "pull" });
+    else if (c.unpushed) add(4, "warn", "push", `${c.unpushed} commit(s) not pushed to GitHub.`, "Push them.", { label: "Push", git: "push" });
+  }
+  for (const i of openFailures(p).slice(0, 3)) add(1, "bad", "run|" + i.title.split(": ")[0], `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why, then ask Claude in this project to fix it.", { label: "See why", url: i.url });
+  for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft);
+  for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" });
+  return items.sort((a, b) => a.pri - b.pri);
+}
+// The short answer to "what needs me here?" at the top of a project.
+function attention(p) {
+  if (p.loading) return `<div class="attn"><b>What needs you</b> <span class="meta">Still loading this project's data...</span></div>`;
+  const items = todo(p);
+  return `<div class="attn"><b>What needs you</b>${items.length ? `<ul>${items.map((i) => `<li><span class="${i.cls}">&#9679;</span> ${i.what} <span class="meta">${esc(i.todo)}</span></li>`).join("")}</ul>` : ` <span class="ok">&#10003; Nothing. This project is up to date.</span>`}</div>`;
+}
+
+// Recommended actions across every project, shown once all of them have loaded. The list is kept in this browser:
+// an item that is no longer in the data is ticked as fixed; one can also be ticked by hand. Fixed items stay for 7 days.
+const PLAN_KEY = "projdash-plan";
+let plan = (() => { try { return JSON.parse(localStorage.getItem(PLAN_KEY)) || {}; } catch { return {}; } })(), planReady = false, planAll = false;
+const PLAN_SHOW = 8; // the most urgent few; the rest behind "Show all"
+const savePlan = () => { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch {} };
+function updatePlan() {
+  const now = Date.now(), order = DATA.projects.map((p) => p.key);
+  const cur = DATA.projects.flatMap((p) => todo(p).filter((i) => i.plan));
+  if (DATA.projects.some((p) => p.loading)) return;
+  const ids = new Set(cur.map((i) => i.id));
+  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, open: true, ticked: !!(old?.open && old.ticked) }; });
+  for (const it of Object.values(plan)) {
+    if (!ids.has(it.id) && it.open) { it.open = false; it.doneAt = now; }
+    if (!it.open && now - it.doneAt > 7 * 864e5) delete plan[it.id];
+  }
+  savePlan(); planReady = true;
+}
+function drawPlan() {
+  const el = $("#plan");
+  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${doneCount} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
+  const all = Object.values(plan), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
+  const left = open.filter((i) => !i.ticked).length;
+  const button = (i) => !i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
+    : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
+    : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`;
+  const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}><b>${esc(i.key)}</b>: ${i.what}</label>
+    <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Ticked by you. It's still in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
+  el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} of ${open.length} still to do` : "All done"}${done.length ? ` · ${done.length} fixed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear fixed</button>` : ""}</div>
+    ${open.length || done.length ? `<ol>${(planAll ? [...open, ...done] : [...open.slice(0, PLAN_SHOW), ...done.filter((i) => Date.now() - i.doneAt < 36e5)]).map(row).join("")}</ol>${open.length > PLAN_SHOW || done.length ? `<button class="ibtn" data-plan-all>${planAll ? "Show fewer" : `Show all ${open.length} to do${done.length ? ` and ${done.length} fixed` : ""}`}</button>` : ""}` : `<div class="ok" style="margin-top:6px">&#10003; Nothing to do. Every project is up to date.</div>`}</div>`;
+}
+$("#plan").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; savePlan(); drawPlan(); } });
+$("#plan").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-clear],[data-plan-all]");
+  if (!t) return;
+  if (t.dataset.planAll !== undefined) { planAll = !planAll; drawPlan(); }
+  else if (t.dataset.planGit) gitAction(t.dataset.key, t.dataset.planGit);
+  else if (t.dataset.planOpen) openProject(t.dataset.planOpen, t.dataset.jump || undefined);
+  else { for (const it of Object.values(plan)) if (!it.open) delete plan[it.id]; savePlan(); drawPlan(); }
+});
 
 function fullView(p) {
   const [label, cls] = status(p), job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
@@ -382,9 +631,9 @@ function fullView(p) {
       <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
       <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>
     </div>
-    ${needPanel(p)}
-    <div class="fbody">${view === "details" ? projectView(p) : `<div class="cols">
-      <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span></h3><div class="colbody">${claudeCol(p)}</div></section>
+    ${view === "focus" ? "" : attention(p) + needPanel(p)}
+    <div class="fbody">${view === "focus" ? focusView(p) : view === "details" ? projectView(p) : `<div class="cols">
+      <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span> <span class="filters"><button data-act="tools" aria-pressed="${showTools}">Show tool steps</button></span></h3><div class="colbody">${claudeCol(p)}</div></section>
       <section class="col" aria-label="GitHub messages"><h3>GitHub messages <span class="filters">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</span></h3><div class="colbody">${ghCol(p)}</div></section>
     </div>`}</div>`;
 }
@@ -394,23 +643,25 @@ $("#full").addEventListener("click", (e) => {
   if (t.dataset.view) { view = t.dataset.view; render(); }
   else if (t.dataset.gh) { ghFilter = t.dataset.gh; render(); }
   else if (t.dataset.act === "close") closeProject();
+  else if (t.dataset.act === "tools") { showTools = !showTools; render(); }
   else if (t.dataset.act === "checkpoint") checkpoint(tab);
   else if (t.dataset.act === "fs") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}).finally(render);
 });
 document.addEventListener("fullscreenchange", () => { if (tab !== "overview") render(); });
 
 function projectView(p) {
-  if (p.error) return `<div class="empty bad">${esc(p.error)}</div>`;
+  if (p.loading) return `<div class="empty">This project's data is still loading. It appears here by itself.</div>`;
+  if (p.error) return `<div class="empty bad">${esc(folderProblem(p)[0])}<br><b>What to do:</b> ${esc(folderProblem(p)[1])}<div class="meta">${esc(p.error)}</div></div>`;
   const g = p.git, r = p.remote;
   const sync =!g.upstream ? "No upstream branch" : `${g.ahead} ahead / ${g.behind} behind ${esc(g.upstream)}`;
   return `<div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
   <div class="sub">Last commit <code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} (${ago(g.last.date)})</div>
-  <h3>Items to commit (${g.files.length})</h3>
+  <h3 id="sec-commit">Items to commit (${g.files.length})</h3>
   ${g.files.length ? `<div class="tbl"><table><tr><th>State</th><th>Path</th></tr>${g.files.map((f) => `<tr><td><span class="pill ${f.kind === "conflict" ? "bad" : "warn"}">${f.kind}</span></td><td class="path">${esc(f.path)}</td></tr>`).join("")}</table></div>` : `<div class="empty">Working tree is clean.</div>`}
-  ${g.unpushed.length ? `<h3>Commits not pushed (${g.unpushed.length})</h3>${diverged(p) ? `<div class="sub warn">Local and remote have diverged (${g.ahead} ahead, ${g.behind} behind). These may already be merged on GitHub under different hashes.</div>` : ""}<ul class="items">${g.unpushed.map((c) => `<li><code>${esc(c.slice(0, 7))}</code> ${esc(c.slice(8))}</li>`).join("")}</ul>` : ""}
-  <h3>Outstanding issues</h3>
-  ${r.issues.map((i) => `<details><summary><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a> ${esc(i.title)} <span class="sub">· ${ago(i.updatedAt)}</span></summary><pre>${esc(i.body)}</pre></details>`).join("") || `<div class="empty">No open issues.</div>`}
-  ${r.prs.length ? `<h3>Open pull requests</h3><ul class="items">${r.prs.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}${x.isDraft ? " (draft)" : ""}</li>`).join("")}</ul>` : ""}
+  ${g.unpushed.length ? `<h3 id="sec-unpushed">Commits not pushed (${g.unpushed.length})</h3>${diverged(p) ? `<div class="sub warn">Local and remote have diverged (${g.ahead} ahead, ${g.behind} behind). These may already be merged on GitHub under different hashes.</div>` : ""}<ul class="items">${g.unpushed.map((c) => `<li><code>${esc(c.slice(0, 7))}</code> ${esc(c.slice(8))}</li>`).join("")}</ul>` : ""}
+  <h3 id="sec-issues">Outstanding issues (${r.issues.length})</h3>
+  ${r.issues.map((i) => `<details class="issue" ${openIssues ? "open" : ""}><summary><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a> ${esc(i.title)} <span class="sub">· ${ago(i.updatedAt)}</span></summary><pre>${esc(i.body)}</pre></details>`).join("") || `<div class="empty">No open issues.</div>`}
+  ${r.prs.length ? `<h3 id="sec-prs">Open pull requests (${r.prs.length})</h3><ul class="items">${r.prs.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}${x.isDraft ? " (draft)" : ""}</li>`).join("")}</ul>` : `<h3 id="sec-prs">Open pull requests (0)</h3><div class="empty">No open pull requests.</div>`}
   <h3>Status notes (PROJECT_STATUS.md)</h3>
   ${p.doc ? `<div class="sub">${esc(p.doc.headline)}</div>${p.doc.open.length ? `<ul class="items">${p.doc.open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${p.doc.totalOpen > p.doc.open.length ? `<div class="sub">Showing ${p.doc.open.length} of ${p.doc.totalOpen}. See PROJECT_STATUS.md.</div>` : ""}` : `<div class="empty">No "still open" list in the newest entry.</div>`}` : `<div class="empty">No PROJECT_STATUS.md found.</div>`}`;
 }
@@ -429,8 +680,10 @@ function render() {
   full.querySelectorAll("textarea").forEach((t, i) => { if (typed[i]) { t.value = typed[i]; t.closest("details")?.setAttribute("open", ""); } });
   full.querySelectorAll(".colbody,.fbody,.need").forEach((el, i) => { if (scroll[i]) el.scrollTop = scroll[i]; });
   if (focus >= 0) full.querySelectorAll("textarea")[focus]?.focus();
+  fetchSummaries(p);
 }
 cards(); tabs(); render();
+if (live) poll().then(watchBuild); else { updatePlan(); drawPlan(); } // a file copy shows the data it was saved with
 </script>
 </body>
 </html>
