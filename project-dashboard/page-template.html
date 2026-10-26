@@ -42,6 +42,8 @@ textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid v
 .rbtn:disabled{opacity:.6;cursor:wait}
 .ibtn:disabled{opacity:.45;cursor:not-allowed}
 .gitsel{width:100%;min-width:0;max-width:100%;font:inherit;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer}
+.jump{cursor:pointer;border-radius:6px;padding:2px 4px;margin:-2px -4px}.jump:hover{background:var(--chip)}.jump:hover small{text-decoration:underline}
+.flash{animation:flash 1.5s}@keyframes flash{from{background:color-mix(in srgb,var(--warn) 35%,transparent)}to{background:transparent}}
 .gitsel:disabled{opacity:.6;cursor:wait}
 details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:6px 0}
 summary{cursor:pointer;font-weight:600}
@@ -166,7 +168,7 @@ function cards() {
     return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : esc(p.error)}</div>
-      <div class="row"><div><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div title="Local and remote have split"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : `<div><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div><b>${c.prs}</b><small>Open PRs</small></div></div>
+      <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
       ${p.git ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
@@ -177,7 +179,7 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
+$("#cards").onclick = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
 $("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
 $("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
@@ -229,11 +231,18 @@ async function gitAction(key, act) {
 }
 
 // Selecting a project opens it over the whole window and asks the browser for real full screen too.
-function openProject(k) {
-  tab = k; view = "messages";
+// A count on a card (Issues, Open PRs, To commit, To push) opens the project's Details at that list, expanded.
+let openIssues = false; // kept in state: entering full screen redraws the view
+function openProject(k, jump) {
+  tab = k; view = jump ? "details" : "messages"; openIssues = jump === "issues";
   history.replaceState(null, "", k === "overview" ? location.pathname : "#p=" + encodeURIComponent(k));
   if (k !== "overview" && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   tabs(); render();
+  const sec = jump && document.getElementById("sec-" + jump);
+  if (sec) {
+    sec.scrollIntoView({ block: "start" });
+    sec.classList.add("flash"); setTimeout(() => sec.classList.remove("flash"), 1500);
+  }
 }
 function closeProject() {
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -428,12 +437,12 @@ function projectView(p) {
   const sync =!g.upstream ? "No upstream branch" : `${g.ahead} ahead / ${g.behind} behind ${esc(g.upstream)}`;
   return `<div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
   <div class="sub">Last commit <code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} (${ago(g.last.date)})</div>
-  <h3>Items to commit (${g.files.length})</h3>
+  <h3 id="sec-commit">Items to commit (${g.files.length})</h3>
   ${g.files.length ? `<div class="tbl"><table><tr><th>State</th><th>Path</th></tr>${g.files.map((f) => `<tr><td><span class="pill ${f.kind === "conflict" ? "bad" : "warn"}">${f.kind}</span></td><td class="path">${esc(f.path)}</td></tr>`).join("")}</table></div>` : `<div class="empty">Working tree is clean.</div>`}
-  ${g.unpushed.length ? `<h3>Commits not pushed (${g.unpushed.length})</h3>${diverged(p) ? `<div class="sub warn">Local and remote have diverged (${g.ahead} ahead, ${g.behind} behind). These may already be merged on GitHub under different hashes.</div>` : ""}<ul class="items">${g.unpushed.map((c) => `<li><code>${esc(c.slice(0, 7))}</code> ${esc(c.slice(8))}</li>`).join("")}</ul>` : ""}
-  <h3>Outstanding issues</h3>
-  ${r.issues.map((i) => `<details><summary><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a> ${esc(i.title)} <span class="sub">· ${ago(i.updatedAt)}</span></summary><pre>${esc(i.body)}</pre></details>`).join("") || `<div class="empty">No open issues.</div>`}
-  ${r.prs.length ? `<h3>Open pull requests</h3><ul class="items">${r.prs.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}${x.isDraft ? " (draft)" : ""}</li>`).join("")}</ul>` : ""}
+  ${g.unpushed.length ? `<h3 id="sec-unpushed">Commits not pushed (${g.unpushed.length})</h3>${diverged(p) ? `<div class="sub warn">Local and remote have diverged (${g.ahead} ahead, ${g.behind} behind). These may already be merged on GitHub under different hashes.</div>` : ""}<ul class="items">${g.unpushed.map((c) => `<li><code>${esc(c.slice(0, 7))}</code> ${esc(c.slice(8))}</li>`).join("")}</ul>` : ""}
+  <h3 id="sec-issues">Outstanding issues (${r.issues.length})</h3>
+  ${r.issues.map((i) => `<details class="issue" ${openIssues ? "open" : ""}><summary><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a> ${esc(i.title)} <span class="sub">· ${ago(i.updatedAt)}</span></summary><pre>${esc(i.body)}</pre></details>`).join("") || `<div class="empty">No open issues.</div>`}
+  ${r.prs.length ? `<h3 id="sec-prs">Open pull requests (${r.prs.length})</h3><ul class="items">${r.prs.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}${x.isDraft ? " (draft)" : ""}</li>`).join("")}</ul>` : `<h3 id="sec-prs">Open pull requests (0)</h3><div class="empty">No open pull requests.</div>`}
   <h3>Status notes (PROJECT_STATUS.md)</h3>
   ${p.doc ? `<div class="sub">${esc(p.doc.headline)}</div>${p.doc.open.length ? `<ul class="items">${p.doc.open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${p.doc.totalOpen > p.doc.open.length ? `<div class="sub">Showing ${p.doc.open.length} of ${p.doc.totalOpen}. See PROJECT_STATUS.md.</div>` : ""}` : `<div class="empty">No "still open" list in the newest entry.</div>`}` : `<div class="empty">No PROJECT_STATUS.md found.</div>`}`;
 }
