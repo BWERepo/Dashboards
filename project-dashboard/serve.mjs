@@ -116,6 +116,17 @@ const server = createServer(async (req, res) => {
     child.stdin.end(text);
     return;
   }
+  // Push the project's current branch to its upstream. A plain push: if the remote has moved on, git refuses and says why.
+  const pk = req.method === "POST" && req.url.startsWith("/push/") ? decodeURIComponent(req.url.slice(6)) : "";
+  if (byKey(pk)) {
+    if (!ownPage(req)) { res.writeHead(403).end("forbidden"); return; }
+    execFile("git", ["-C", winDir(byKey(pk).dir), "push"], { windowsHide: true }, async (err, out, errOut) => {
+      if (err) { res.writeHead(500, cors).end(String(errOut || err.message).trim().slice(-800)); return; }
+      try { await build(); } catch {}
+      res.writeHead(200, cors).end(String(errOut || out).trim() || "pushed");
+    });
+    return;
+  }
   if (req.method === "POST" && req.url === "/refresh") {
     const cors = { "Access-Control-Allow-Origin": "*" }; // lets a double-clicked index.html trigger a refresh
     try { await build(); res.writeHead(200, cors).end("ok"); }
