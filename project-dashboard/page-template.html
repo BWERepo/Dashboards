@@ -88,6 +88,8 @@ body.locked{overflow:hidden}
 .filters button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:2px 9px;border-radius:99px;cursor:pointer}
 .filters button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
 .note{font-size:12px;color:var(--mute)}
+.attn{margin:12px 16px 0;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.attn ul{margin:6px 0 0;padding:0;list-style:none}.attn li{margin:4px 0}.attn li .meta{margin-left:6px}
 </style>
 </head>
 <body>
@@ -116,7 +118,7 @@ const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", da
 const md = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
 // The open project is kept in the address (#p=KEY) so a reload comes back to it.
 let tab = (() => { const k = decodeURIComponent((location.hash.match(/^#p=(.+)$/) || [])[1] || ""); return DATA.projects.some((p) => p.key === k) ? k : "overview"; })();
-let view = "messages", ghFilter = "all";
+let view = "messages", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
 const AUTO_KEY = "projdash-auto";
@@ -344,7 +346,7 @@ function needPanel(p) {
     const rec = (it.text || "").match(/^.*\brecommend.*$/im)?.[0];
     return `<div class="needitem">
       <div><b>Action Required:</b> Claude is waiting on you in <b>${esc(it.title)}</b> <span class="meta">· ${fmt(it.at)}</span></div>
-      <div class="asktext">${md(it.text)}</div>
+      ${it.text.length > 600 ? `<div class="asktext">${md("…" + it.text.slice(-600))}</div><details><summary>Show the whole message</summary><div class="asktext">${md(it.text)}</div></details>` : `<div class="asktext">${md(it.text)}</div>`}
       ${it.denials.length ? `<div><b>Claude was blocked from:</b></div><ul class="items">${it.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" data-send="claude" data-allow="1" data-box="${id}">Allow these and continue</button>` : ""}
       ${opts.length ? `<div class="tools"><b>Options:</b> ${opts.map((o) => `<button class="opt" data-pick="${o}" data-for="${id}">Option ${o}</button>`).join("")}</div>` : ""}
       ${rec ? `<div><b>Recommendation:</b> ${md(rec.replace(/^[\s*#>-]+/, ""))}</div>` : ""}
@@ -383,18 +385,23 @@ function claudeCol(p) {
   const waits = new Set(asking(p).filter((x) => !x.job).map((x) => x.sessionId));
   const sessions = (p.sessions || []).map((s, i) => `<details class="sess card" style="margin:0 0 8px" ${i === 0 || waits.has(s.id) ? "open" : ""}>
       <summary>${esc(s.title)} ${waits.has(s.id) ? `<span class="pill bad">Needs input</span>` : ""}<div class="meta">${fmt(s.updatedAt)} · ${s.total} messages${s.total > s.messages.length ? `, newest ${s.messages.length} shown` : ""}</div></summary>
-      ${s.messages.map((m) => m.role === "tool" ? `<div class="msg tool">&#8250; ${esc(m.text)}</div>` : `<div class="msg ${m.role}"><div class="meta">${who[m.role]} · ${fmt(m.at)}</div><div class="txt">${md(m.text)}</div></div>`).join("")}
+      ${s.messages.filter((m) => showTools || m.role !== "tool").map((m) => m.role === "tool" ? `<div class="msg tool">&#8250; ${esc(m.text)}</div>` : `<div class="msg ${m.role}"><div class="meta">${who[m.role]} · ${fmt(m.at)}</div><div class="txt">${md(m.text)}</div></div>`).join("")}
       ${waits.has(s.id) ? `<div class="note warn">Claude is waiting on you. Answer in the USER INPUT NEEDED box above.</div>` : `<details><summary>Reply to this session</summary>${replyBox(`data-send="claude" data-session="${esc(s.id)}"`, "Message Claude")}<div class="note">Sends with <code>claude --resume</code> in the background. Avoid this while the same session is open in a terminal.</div></details>`}
     </details>`).join("");
   return jobPanel(p.key) + (sessions || `<div class="empty">No Claude Code sessions found for <code>${esc(p.dir)}</code>.</div>`);
 }
 
 // GitHub column: one newest-first timeline of issues, PRs, comments, commits and Actions runs.
-const GH_TYPES = { all: "All", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
+const GH_TYPES = { attention: "Needs attention", all: "All activity", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
+const failedRun = (i) => i.type === "run" && /fail|cancel|timed|startup/.test(i.state || "");
+// A failure only needs attention while it is that workflow's newest run; a later green run has fixed it.
+const openFailures = (p) => { const seen = new Set(); return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); return failedRun(i); }); };
+const openItem = (i) => (i.type === "issue" || i.type === "pr") && i.state !== "closed" && i.state !== "merged";
 function ghCol(p) {
   const r = p.remote;
   if (!r.url) return `<div class="empty">No GitHub repo for this project.</div>`;
-  const list = (r.activity || []).filter((i) => ghFilter === "all" || i.type === ghFilter || (ghFilter === "talk" && (i.type === "issue" || i.type === "pr")));
+  const fails = openFailures(p);
+  const list = (r.activity || []).filter((i) => ghFilter === "all" || i.type === ghFilter || (ghFilter === "talk" && (i.type === "issue" || i.type === "pr")) || (ghFilter === "attention" && (openItem(i) || fails.includes(i))));
   const stateCls = (s) => /fail|cancel|timed|startup/.test(s) ? "bad" : /success|merged|closed|completed/.test(s) ? "ok" : "warn";
   const label = (i) => i.type === "issue" ? `Issue #${i.number}` : i.type === "pr" ? `PR #${i.number}` : i.type === "comment" ? "Comment" : i.type === "commit" ? `Commit ${esc(i.sha)}` : "Action";
   return list.map((i) => `<div class="ev">
@@ -402,9 +409,26 @@ function ghCol(p) {
       <div class="meta">${esc(i.author || "")} · ${fmt(i.at)}${i.created && i.created !== i.at ? " · opened " + fmt(i.created) : ""}</div>
       ${i.body ? `<details ${i.type === "comment" ? "open" : ""}><summary>Message</summary><div class="asktext">${md(i.body)}</div></details>` : ""}
       ${i.number && (i.type !== "issue" && i.type !== "pr" || i.state !== "closed") ? `<details><summary>Reply on GitHub</summary>${replyBox(`data-send="gh" data-number="${i.number}"`, `Comment on #${i.number}`, "Post comment")}</details>` : ""}
-    </div>`).join("") || `<div class="empty">No GitHub activity${ghFilter === "all" ? "" : " of this kind"}.</div>`;
+    </div>`).join("") || `<div class="empty">${ghFilter === "attention" ? "Nothing on GitHub needs you: no open issues or PRs, and no Actions workflow whose latest run failed. Pick All activity to see everything." : `No GitHub activity${ghFilter === "all" ? "" : " of this kind"}.`}</div>`;
 }
 
+// The short answer to "what needs me here?", worked out from the data, each line saying what to do.
+function attention(p) {
+  const g = p.git, c = counts(p), items = [];
+  if (p.error) items.push(["bad", "The folder could not be read.", esc(p.error)]);
+  else {
+    if (c.uncommitted) items.push(["warn", `${c.uncommitted} changed file${c.uncommitted > 1 ? "s" : ""} not committed.`, "Pick Commit in the Git dropdown on this project's card."]);
+    if (diverged(p)) items.push(["warn", `Diverged: ${g.ahead} commit(s) only on this PC, ${g.behind} only on GitHub.`, "Pick Fix diverged in the Git dropdown."]);
+    else if (g.behind) items.push(["warn", `GitHub has ${g.behind} newer commit(s) this PC doesn't have.`, "Pick Pull in the Git dropdown."]);
+    else if (c.unpushed) items.push(["warn", `${c.unpushed} commit(s) not pushed to GitHub.`, "Pick Push in the Git dropdown."]);
+  }
+  const n = asking(p).length;
+  if (n) items.push(["bad", `Claude is waiting for your answer${n > 1 ? ` in ${n} places` : ""}.`, "Answer in the red box below."]);
+  for (const i of p.remote.issues) items.push(["warn", `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Open it to read what's reported."]);
+  for (const x of p.remote.prs) items.push(["warn", `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on." : "Review and merge it, or close it."]);
+  for (const i of openFailures(p).slice(0, 3)) items.push(["bad", `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why."]);
+  return `<div class="attn"><b>What needs you</b>${items.length ? `<ul>${items.map(([cls, what, todo]) => `<li><span class="${cls}">&#9679;</span> ${what} <span class="meta">${todo}</span></li>`).join("")}</ul>` : ` <span class="ok">&#10003; Nothing. This project is up to date.</span>`}</div>`;
+}
 function fullView(p) {
   const [label, cls] = status(p), job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
   return `<div class="fbar">
@@ -414,9 +438,10 @@ function fullView(p) {
       <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
       <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>
     </div>
+    ${attention(p)}
     ${needPanel(p)}
     <div class="fbody">${view === "details" ? projectView(p) : `<div class="cols">
-      <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span></h3><div class="colbody">${claudeCol(p)}</div></section>
+      <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span> <span class="filters"><button data-act="tools" aria-pressed="${showTools}">Show tool steps</button></span></h3><div class="colbody">${claudeCol(p)}</div></section>
       <section class="col" aria-label="GitHub messages"><h3>GitHub messages <span class="filters">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</span></h3><div class="colbody">${ghCol(p)}</div></section>
     </div>`}</div>`;
 }
@@ -426,6 +451,7 @@ $("#full").addEventListener("click", (e) => {
   if (t.dataset.view) { view = t.dataset.view; render(); }
   else if (t.dataset.gh) { ghFilter = t.dataset.gh; render(); }
   else if (t.dataset.act === "close") closeProject();
+  else if (t.dataset.act === "tools") { showTools = !showTools; render(); }
   else if (t.dataset.act === "checkpoint") checkpoint(tab);
   else if (t.dataset.act === "fs") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}).finally(render);
 });
