@@ -68,9 +68,12 @@ function runClaude(key, prompt, { resume, allow = [], kind } = {}) {
 // Replies speak for the user (to Claude, or as a GitHub comment), so only this page may send them: any other
 // site open in the browser could otherwise POST here.
 const ownPage = (req) => !req.headers.origin || /^http:\/\/(127\.0\.0\.1|localhost):8788$/.test(req.headers.origin);
-// git output for both streams (push reports on stderr); rejects with git's own message.
-const git = (dir, ...args) => new Promise((resolve, reject) => execFile("git", ["-C", dir, ...args], { windowsHide: true }, (err, out, errOut) =>
-  err ? reject(new Error(String(errOut || out || err.message).trim())) : resolve(String(out + errOut).trim())));
+// git output for both streams (push reports on stderr); rejects with git's own message. There is no terminal to answer
+// a login prompt, so git is told not to ask, and a call that still hangs is stopped after 3 minutes.
+const git = (dir, ...args) => new Promise((resolve, reject) => execFile("git", ["-C", dir, ...args],
+  { windowsHide: true, timeout: 180000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }, (err, out, errOut) =>
+  err ? reject(new Error(err.killed ? `git ${args[0]} took over 3 minutes and was stopped. Try it in a terminal to see if it is waiting for a login.` : String(errOut || out || err.message).trim()))
+    : resolve(String(out + errOut).trim())));
 const SECRETISH = /(^|\/)(\.env(\..*)?|\.dev\.vars|id_rsa.*|.*\.(pem|key|p12|pfx)|credentials.*|secrets?\.(json|ya?ml|txt))$/i;
 const readBody = (req) => new Promise((resolve) => { let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => resolve(b)); });
 
@@ -142,8 +145,7 @@ const server = createServer(async (req, res) => {
         const upstream = await git(dir, "rev-parse", "--abbrev-ref", "@{u}").catch(() => "");
         out.push(upstream ? await git(dir, "push") : await git(dir, "push", "-u", "origin", "HEAD"));
       }
-      try { await build(); } catch {}
-      res.writeHead(200, cors).end(out.join("\n").trim() || "done");
+      res.writeHead(200, cors).end(out.join("\n").trim() || "done"); // the page asks for the rebuild, so it can show that step
     } catch (e) { res.writeHead(500, cors).end(String(e.message).trim().slice(-800)); }
     return;
   }
