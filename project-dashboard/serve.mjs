@@ -130,18 +130,33 @@ const server = createServer(async (req, res) => {
     if (!ownPage(req)) { res.writeHead(403).end("forbidden"); return; }
     let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
     const act = body.action, message = String(body.message || "").trim().slice(0, 5000), dir = winDir(byKey(gk2).dir);
-    if (!["commit", "push", "both"].includes(act) || (act !== "push" && !message)) { res.writeHead(400, cors).end("need an action and, to commit, a message"); return; }
+    const commits = act === "commit" || act === "both";
+    if (!["commit", "push", "both", "pull", "sync"].includes(act) || (commits && !message)) { res.writeHead(400, cors).end("need an action and, to commit, a message"); return; }
     try {
       const out = [];
-      if (act !== "push") {
-        const changed = (await git(dir, "status", "--porcelain=v1", "-uall")).split("\n").filter(Boolean).map((l) => l.slice(3).replace(/^"|"$/g, "").split(" -> ").pop());
+      const changedFiles = async () => [...new Set([
+        ...(await git(dir, "ls-files", "--modified", "--others", "--exclude-standard")).split("\n"),
+        ...(await git(dir, "diff", "--cached", "--name-only")).split("\n"),
+      ].filter(Boolean))];
+      // Pull rebases local commits on top of GitHub's. Commits already on GitHub are dropped by the rebase; on a
+      // conflict the rebase is undone, so the folder is left exactly as it was.
+      if (act === "pull" || act === "sync") {
+        if ((await changedFiles()).length) throw new Error("There are uncommitted changes. Commit them first, then pull.");
+        try { out.push(await git(dir, "pull", "--rebase")); }
+        catch (e) {
+          await git(dir, "rebase", "--abort").catch(() => {});
+          throw new Error(`Pull stopped and was undone, so nothing changed. Your commits and GitHub's touch the same lines; this needs merging by hand (or ask Claude in that project).\n\n${e.message.split("\n").filter((l) => !/^hint:/.test(l)).join("\n")}`);
+        }
+      }
+      if (commits) {
+        const changed = await changedFiles();
         const risky = changed.filter((f) => SECRETISH.test(f) && !/\.(example|sample|template)$/i.test(f));
         if (risky.length) throw new Error(`Not committing: these look like secrets and should be in .gitignore:\n${risky.join("\n")}`);
         if (!changed.length) throw new Error("Nothing to commit.");
         await git(dir, "add", "-A");
         out.push(await git(dir, "commit", "-m", message));
       }
-      if (act !== "commit") {
+      if (act === "push" || act === "both" || act === "sync") {
         const upstream = await git(dir, "rev-parse", "--abbrev-ref", "@{u}").catch(() => "");
         out.push(upstream ? await git(dir, "push") : await git(dir, "push", "-u", "origin", "HEAD"));
       }
