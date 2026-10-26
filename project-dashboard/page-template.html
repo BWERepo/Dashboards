@@ -178,7 +178,7 @@ function tabs() {
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
 $("#cards").onclick = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
-$("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; gitAction(s.dataset.key, act); } };
+$("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
 $("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
 // A Git dropdown on every card: Commit, Push, Commit & push, Pull, and Fix diverged (pull, then push).
