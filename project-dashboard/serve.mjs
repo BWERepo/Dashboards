@@ -34,7 +34,10 @@ const allowSpec = (d) => (d.tool_name === "Bash" && d.tool_input?.command ? `Bas
 function runClaude(key, prompt, { resume, allow = [], kind } = {}) {
   const dir = winDir(byKey(key).dir);
   const prev = resume && jobs[key]?.sessionId === resume ? jobs[key] : null; // a new session starts a fresh log
-  const job = jobs[key] = { status: "running", kind: kind || prev?.kind || "checkpoint", startedAt: prev?.startedAt || Date.now(), endedAt: null, log: prev?.log || "", sessionId: resume || prev?.sessionId, denials: [], result: "" };
+  // answered: session id -> when the user last replied to it from here. A resumed headless run can carry on under a
+  // new session id, so the page uses this to stop showing a question that has already been answered.
+  const answered = { ...(prev?.answered || jobs[key]?.answered || {}), ...(resume ? { [resume]: Date.now() } : {}) };
+  const job = jobs[key] = { status: "running", kind: kind || prev?.kind || "checkpoint", startedAt: prev?.startedAt || Date.now(), lastStart: Date.now(), endedAt: null, log: prev?.log || "", sessionId: resume || prev?.sessionId, denials: [], result: "", answered };
   const args = ["-p", "--output-format", "stream-json", "--verbose"];
   if (resume) args.push("--resume", resume);
   if (allow.length) args.push("--allowedTools", ...allow.map(q));

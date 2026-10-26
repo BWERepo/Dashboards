@@ -88,6 +88,10 @@ body.locked{overflow:hidden}
 .filters button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:2px 9px;border-radius:99px;cursor:pointer}
 .filters button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
 .note{font-size:12px;color:var(--mute)}
+.working{display:flex;gap:12px;align-items:flex-start;border:2px solid var(--accent);border-radius:10px;background:var(--card);margin:12px 16px 0;padding:12px 14px}
+.spin{flex:none;width:18px;height:18px;margin-top:2px;border:3px solid var(--chip);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin.sm{display:inline-block;vertical-align:-2px;width:11px;height:11px;margin:0 2px 0 0;border-width:2px}
 .attn{margin:12px 16px 0;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
 .attn ul{margin:6px 0 0;padding:0;list-style:none}.attn li{margin:4px 0}.attn li .meta{margin-left:6px}
 </style>
@@ -272,11 +276,11 @@ function overview() {
 const CMDS = Object.fromEntries(DATA.projects.filter((p) => p.cmd).map((p) => [p.key, p.cmd]));
 let JOBS = {};
 const live = location.protocol === "http:"; // replies need the local server (refresh.cmd)
-const clock = (j) => { const s = Math.round(((j.endedAt || Date.now()) - j.startedAt) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+const clock = (j) => { const s = Math.round(((j.endedAt || Date.now()) - (j.lastStart || j.startedAt)) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
 const badge = (key) => {
   const j = JOBS[key]; if (!j) return "";
   const what = j.kind === "reply" ? "Claude" : "Checkpoint";
-  return j.status === "running" ? `<span class="pill warn">&#9201; ${what} working ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : j.status === "done" ? `<span class="pill ok">&#10003; ${what} done</span>` : `<span class="pill bad">&#10007; ${what} failed</span>`;
+  return j.status === "running" ? `<span class="pill warn"><span class="spin sm" aria-hidden="true"></span> Claude is working ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : j.status === "done" ? `<span class="pill ok">&#10003; ${what} done</span>` : `<span class="pill bad">&#10007; ${what} failed</span>`;
 };
 // Everything in a project that is waiting on the user: a stopped headless job, and recent sessions that ended on a question.
 function asking(p) {
@@ -285,7 +289,8 @@ function asking(p) {
   for (const s of p.sessions || []) {
     const last = [...s.messages].reverse().find((m) => m.role === "claude");
     // A reply sent from here after Claude's question supersedes it; the job above carries the new state.
-    if (!s.asking || (j && j.sessionId === s.id && j.startedAt >= Date.parse(last?.at || s.updatedAt) - 1000)) continue;
+    const repliedAt = j?.answered?.[s.id] || (j && j.sessionId === s.id ? j.startedAt : 0);
+    if (!s.asking || repliedAt >= Date.parse(last?.at || s.updatedAt) - 1000) continue;
     out.push({ sessionId: s.id, title: s.title, text: last?.text || "", at: last?.at || s.updatedAt, denials: [] });
   }
   return out;
@@ -305,6 +310,7 @@ async function poll() {
     const log = $("#joblog"), b = $("#jobbadge");
     if (log && JOBS[tab]) { const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8; log.textContent = JOBS[tab].log; if (atEnd) log.scrollTop = log.scrollHeight; }
     if (b) b.innerHTML = badge(tab);
+    const wc = $("#workclock"); if (wc && JOBS[tab]) wc.textContent = clock(JOBS[tab]);
   } catch {}
 }
 
@@ -336,7 +342,16 @@ document.addEventListener("click", async (e) => {
 const denialText = (d) => d.tool_name + (d.tool_input?.command ? ": " + d.tool_input.command : d.tool_input?.file_path ? ": " + d.tool_input.file_path : "");
 
 // The USER INPUT NEEDED block at the top of a project, in the format the project instructions ask for.
+// While Claude runs for this project nothing can be sent to it, so say so plainly instead of offering a reply box.
+function workingPanel(p) {
+  const j = JOBS[p.key];
+  if (j?.status !== "running") return "";
+  return `<div class="working" role="status"><span class="spin" aria-hidden="true"></span><div><b>Claude is working${j.kind === "reply" ? " on your answer" : j.kind === "checkpoint" ? ` on the checkpoint` : ""}</b> <span id="workclock" class="meta">${clock(j)}</span>
+    <div class="meta">You can't send anything until it finishes. This page updates by itself; if Claude asks something else, it shows up here.</div>
+    <details><summary>Watch what it's doing</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details></div></div>`;
+}
 function needPanel(p) {
+  if (JOBS[p.key]?.status === "running") return workingPanel(p);
   const items = asking(p);
   if (!items.length) return "";
   return `<div class="need" role="alert"><div class="needhead">&#128680; USER INPUT NEEDED &#128680;</div>${items.map((it) => {
@@ -359,7 +374,7 @@ function jobPanel(key) {
   const j = JOBS[key];
   if (!j) return "";
   return `<div class="card" style="margin:0 0 10px"><div class="tools" style="margin:0 0 6px"><b>${j.kind === "reply" ? "Reply sent from this dashboard" : "Checkpoint run"}</b> <span id="jobbadge">${badge(key)}</span> <span class="meta">${fmt(new Date(j.startedAt).toISOString())}</span></div>
-    <details ${j.status === "running" ? "open" : ""}><summary>Activity log</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details>
+    <details><summary>Activity log</summary><pre ${j.status === "running" ? "" : `id="joblog"`} class="joblog">${esc(j.log || "Starting...")}</pre></details>
     ${j.status !== "running" && j.status !== "waiting" && j.sessionId ? `<details><summary>Continue this conversation</summary>${replyBox(`data-send="claude"`, "Message Claude")}</details>` : ""}
   </div>`;
 }
@@ -422,7 +437,8 @@ function attention(p) {
     else if (g.behind) items.push(["warn", `GitHub has ${g.behind} newer commit(s) this PC doesn't have.`, "Pick Pull in the Git dropdown."]);
     else if (c.unpushed) items.push(["warn", `${c.unpushed} commit(s) not pushed to GitHub.`, "Pick Push in the Git dropdown."]);
   }
-  const n = asking(p).length;
+  const n = JOBS[p.key]?.status === "running" ? 0 : asking(p).length;
+  if (JOBS[p.key]?.status === "running") items.push(["warn", "Claude is working on this project right now.", "Wait for it to finish; the page updates by itself."]);
   if (n) items.push(["bad", `Claude is waiting for your answer${n > 1 ? ` in ${n} places` : ""}.`, "Answer in the red box below."]);
   for (const i of p.remote.issues) items.push(["warn", `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Open it to read what's reported."]);
   for (const x of p.remote.prs) items.push(["warn", `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on." : "Review and merge it, or close it."]);
