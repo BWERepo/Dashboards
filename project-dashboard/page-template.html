@@ -114,7 +114,7 @@ body.locked{overflow:hidden}
 <script>
 window.addEventListener("error", (e) => {
   const d = document.querySelector("#detail") || document.body;
-  d.insertAdjacentHTML("afterbegin", `<div class="empty bad">The dashboard hit an error: ${String(e.message).replace(/</g, "&lt;")} (line ${e.lineno}).</div>`);
+  d.insertAdjacentHTML("afterbegin", `<div class="empty bad">Something on this page broke: ${String(e.message).replace(/</g, "&lt;")} (line ${e.lineno}).<br><b>What to do:</b> click Refresh now. If it keeps happening, send a screenshot of this message to Claude.</div>`);
 });
 const DATA = /*__DATA__*/null;
 if (!DATA) throw new Error("This is the blank page-template.html, not the dashboard. Run refresh.cmd.");
@@ -144,7 +144,7 @@ async function refresh(manual) {
   } catch (err) {
     b.disabled = false; b.textContent = "Refresh now";
     // "Failed to fetch" means nothing answered at all: the dashboard server has stopped, not that a refresh went wrong.
-    $("#stamp").textContent = location.protocol === "http:" && !/failed to fetch|networkerror/i.test(err.message) ? "Refresh failed: " + err.message : "The dashboard server isn't running. Double-click refresh.cmd in the project-dashboard folder, then try again.";
+    $("#stamp").textContent = location.protocol === "http:" && !/failed to fetch|networkerror/i.test(err.message) ? (/What to do:/.test(err.message) ? err.message : "Refresh failed: " + err.message + " What to do: click Refresh now again; if it keeps failing, send a screenshot to Claude.") : "The dashboard server isn't running. Double-click refresh.cmd in the project-dashboard folder, then try again.";
   }
 }
 $("#refresh").onclick = () => refresh(true);
@@ -162,6 +162,10 @@ const counts = (p) => ({
   prs: p.remote.prs.length,
   todo: p.doc?.totalOpen ?? 0,
 });
+// Why a project's folder couldn't be read, and what to do about it.
+const folderProblem = (p) => /cannot change to|no such file/i.test(p.error) ? [`The folder ${p.dir} wasn't found.`, "Check the drive is connected and the folder exists, or correct its path in projects.mjs."]
+  : /not a git repository/i.test(p.error) ? [`${p.dir} isn't a git repository.`, "Correct the path in projects.mjs, or ask Claude to set the folder up with git."]
+  : ["Git couldn't read this project's folder.", "Click Refresh now. If it keeps failing, send a screenshot of this card to Claude."];
 function status(p) {
   if (p.error) return ["Git error", "bad"];
   const c = counts(p);
@@ -178,7 +182,7 @@ function cards() {
     const b = badge(p.key) || (asking(p).length ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : "");
     return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
-      <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : esc(p.error)}</div>
+      <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
       <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
       ${p.git ? gitButtons(p, c) : ""}
     </div>`;
@@ -221,11 +225,11 @@ async function gitAction(key, act) {
   if (act === "commit" || act === "both") {
     message = prompt(`${act === "both" ? "Commit and push" : "Commit"} all ${files.length} changed file(s) in ${p.key} on ${g.branch}:\n\n${list(files)}\n\nCommit message:`, `Update ${files.length} file${files.length > 1 ? "s" : ""}`);
     if (message === null) return;
-    if (!message.trim()) { say("A commit message is needed.", true); return; }
+    if (!message.trim()) { say("The commit message was empty, so nothing was committed.\nWhat to do: pick the option again and type a short message describing the change.", true); return; }
   } else if (act === "push" && !confirm(`Push ${g.unpushed.length} commit(s) on ${g.branch} to ${g.upstream || "origin"} for ${p.key}?\n\n${list(g.unpushed)}`)) return;
   else if (act === "pull" && !confirm(`Pull ${g.behind} commit(s) from ${g.upstream} into ${p.key}?${g.ahead ? `\n\nYour ${g.ahead} local commit(s) are replayed on top.` : ""}`)) return;
   else if (act === "sync" && !confirm(`Fix the diverged ${p.key}?\n\n1. Pull GitHub's ${g.behind} commit(s) and replay your ${g.ahead} local commit(s) on top (any already on GitHub are dropped).\n2. Push the result.\n\nIf the two sides conflict, the pull is undone and nothing changes.\n\nYour local commits:\n${list(g.unpushed)}`)) return;
-  if (location.protocol !== "http:") { say("This needs the local server. Double-click refresh.cmd, then try again.", true); return; }
+  if (location.protocol !== "http:") { say("This page was opened as a file, so it can't run git.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).", true); return; }
   // A running clock shows from the press until the page reloads, for the git step and then the dashboard rebuild.
   const t0 = Date.now();
   let step = { commit: "Committing", push: "Pushing", both: "Committing and pushing", pull: "Pulling", sync: "Fixing diverged: pulling, then pushing" }[act];
@@ -238,7 +242,7 @@ async function gitAction(key, act) {
     step = "Done. Updating the dashboard"; tick();
     await fetch("/refresh", { method: "POST" }).catch(() => {});
     location.reload();
-  } catch (err) { clearInterval(timer); gitBusy[p.key] = false; say("Failed: " + err.message, true); }
+  } catch (err) { clearInterval(timer); gitBusy[p.key] = false; say(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? "The dashboard server isn't running, so nothing was done.\nWhat to do: double-click refresh.cmd in the project-dashboard folder, then try again." : err.message + "\nWhat to do: click Refresh now and try again. If it keeps failing, send a screenshot of this message to Claude.", true); }
 }
 
 // Selecting a project opens it over the whole window and asks the browser for real full screen too.
@@ -346,7 +350,7 @@ async function poll() {
 
 // Reply boxes. Ctrl+Enter sends; the box's button says where the text goes.
 let boxN = 0;
-const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" data-msg="${id}"></div>`; };
+const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" style="white-space:pre-wrap" data-msg="${id}"></div>`; };
 document.addEventListener("keydown", (e) => { if (e.target.tagName === "TEXTAREA" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.target.closest(".tools")?.querySelector("button.send")?.click(); });
 document.addEventListener("click", async (e) => {
   const opt = e.target.closest("[data-pick]");
@@ -356,7 +360,7 @@ document.addEventListener("click", async (e) => {
   const box = btn.dataset.box && document.getElementById(btn.dataset.box), text = (box?.value || "").trim(), allow = btn.dataset.allow === "1";
   const say = (m) => { const n = document.querySelector(`[data-msg="${btn.dataset.box}"]`); if (n) n.textContent = m; };
   if (!allow && !text) { box?.focus(); return; }
-  if (!live) { say("Replies need the local server. Double-click refresh.cmd, then reply from http://127.0.0.1:8788."); return; }
+  if (!live) { say("This page was opened as a file, so it can't send replies.\nWhat to do: double-click refresh.cmd and reply from the page it opens (http://127.0.0.1:8788)."); return; }
   btn.disabled = true;
   try {
     const gh = btn.dataset.send === "gh";
@@ -367,7 +371,7 @@ document.addEventListener("click", async (e) => {
     if (box) box.value = "";
     if (gh) { say(""); btn.closest(".ev")?.insertAdjacentHTML("beforeend", `<div class="note ok">Posted. It shows here after the next refresh.</div>`); btn.disabled = false; }
     else { await poll(); render(); }
-  } catch (err) { btn.disabled = false; say("Could not send: " + err.message); }
+  } catch (err) { btn.disabled = false; say(/What to do:/.test(err.message) ? "Not sent. " + err.message : /failed to fetch|networkerror/i.test(err.message) ? "Not sent: the dashboard server isn't running.\nWhat to do: double-click refresh.cmd in the project-dashboard folder, then send again." : "Not sent: " + err.message + "\nWhat to do: try again. If it keeps failing, send a screenshot of this message to Claude."); }
 });
 const denialText = (d) => d.tool_name + (d.tool_input?.command ? ": " + d.tool_input.command : d.tool_input?.file_path ? ": " + d.tool_input.file_path : "");
 
@@ -419,8 +423,8 @@ async function checkpoint(key) {
     if (!live) { location.href = SERVER + "/#p=" + encodeURIComponent(key); return; }
     await poll(); render();
   } catch {
-    try { await navigator.clipboard.writeText(CMDS[key]); msg.textContent = "Server not running. Copied " + CMDS[key] + ". Paste it into Claude Code in that project."; }
-    catch { msg.textContent = "Server not running. Run " + CMDS[key] + " in Claude Code in that project."; }
+    try { await navigator.clipboard.writeText(CMDS[key]); msg.textContent = "The dashboard server isn't running, so the checkpoint didn't start. What to do: double-click refresh.cmd, or paste " + CMDS[key] + " (now copied) into Claude Code in that project."; }
+    catch { msg.textContent = "The dashboard server isn't running, so the checkpoint didn't start. What to do: double-click refresh.cmd, or run " + CMDS[key] + " in Claude Code in that project."; }
   }
 }
 
@@ -460,7 +464,7 @@ function ghCol(p) {
 // The short answer to "what needs me here?", worked out from the data, each line saying what to do.
 function attention(p) {
   const g = p.git, c = counts(p), items = [];
-  if (p.error) items.push(["bad", "The folder could not be read.", esc(p.error)]);
+  if (p.error) items.push(["bad", esc(folderProblem(p)[0]), "What to do: " + esc(folderProblem(p)[1])]);
   else {
     if (c.uncommitted) items.push(["warn", `${c.uncommitted} changed file${c.uncommitted > 1 ? "s" : ""} not committed.`, "Pick Commit in the Git dropdown on this project's card."]);
     if (diverged(p)) items.push(["warn", `Diverged: ${g.ahead} commit(s) only on this PC, ${g.behind} only on GitHub.`, "Pick Fix diverged in the Git dropdown."]);
@@ -503,7 +507,7 @@ $("#full").addEventListener("click", (e) => {
 document.addEventListener("fullscreenchange", () => { if (tab !== "overview") render(); });
 
 function projectView(p) {
-  if (p.error) return `<div class="empty bad">${esc(p.error)}</div>`;
+  if (p.error) return `<div class="empty bad">${esc(folderProblem(p)[0])}<br><b>What to do:</b> ${esc(folderProblem(p)[1])}<div class="meta">${esc(p.error)}</div></div>`;
   const g = p.git, r = p.remote;
   const sync =!g.upstream ? "No upstream branch" : `${g.ahead} ahead / ${g.behind} behind ${esc(g.upstream)}`;
   return `<div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>

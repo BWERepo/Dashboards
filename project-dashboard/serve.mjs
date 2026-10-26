@@ -22,7 +22,7 @@ const JOBS_FILE = join(here, "jobs.json");
 const jobs = (() => {
   try {
     const saved = JSON.parse(readFileSync(JOBS_FILE, "utf8"));
-    for (const j of Object.values(saved)) if (j.status === "running") { j.status = "failed"; j.log += "\n[dashboard server restarted while this was running]\n"; }
+    for (const j of Object.values(saved)) if (j.status === "running") { j.status = "failed"; j.log += "\n" + problem("The dashboard server restarted while Claude was running, so this run was cut off.", "Send Claude a message below (or run it again) to carry on.") + "\n"; }
     return saved;
   } catch { return {}; }
 })();
@@ -57,7 +57,7 @@ function runClaude(key, prompt, { resume, allow = [], kind } = {}) {
   };
   child.stdout.on("data", (d) => { buf += d; const lines = buf.split("\n"); buf = lines.pop(); lines.forEach(onLine); });
   child.stderr.on("data", (d) => say(String(d).trim()));
-  child.on("error", (e) => { say(String(e.message)); job.status = "failed"; job.endedAt = Date.now(); });
+  child.on("error", (e) => { say(problem("Claude Code couldn't be started.", "Check Claude Code is installed: open PowerShell and run claude --version. Then try again.", e.message)); job.status = "failed"; job.endedAt = Date.now(); });
   child.on("close", async (code) => {
     if (buf.trim()) onLine(buf);
     // A clean exit is not a finished release: Claude may have stopped to ask the user something.
@@ -78,6 +78,23 @@ const git = (dir, ...args) => new Promise((resolve, reject) => execFile("git", [
   err ? reject(new Error(err.killed ? `git ${args[0]} took over 3 minutes and was stopped. Try it in a terminal to see if it is waiting for a login.` : String(errOut || out || err.message).trim()))
     : resolve(String(out + errOut).trim())));
 const SECRETISH = /(^|\/)(\.env(\..*)?|\.dev\.vars|id_rsa.*|.*\.(pem|key|p12|pfx)|credentials.*|secrets?\.(json|ya?ml|txt))$/i;
+// Every error the page shows says what went wrong and what to do about it: "<problem>\nWhat to do: <fix>".
+// (Function declarations, so the saved-jobs loader near the top can use them.)
+function problem(what, fix, details) { return `${what}\nWhat to do: ${fix}${details ? `\n\nDetails: ${String(details).trim().slice(-600)}` : ""}`; }
+function fail(res, code, what, fix, details) { res.writeHead(code, { "Access-Control-Allow-Origin": "*" }).end(problem(what, fix, details)); }
+const NOT_OWN_PAGE = ["This request didn't come from the dashboard page, so it was refused.", "Use the dashboard at http://127.0.0.1:8788."];
+// Turns git's own wording into a plain problem and fix for the common cases.
+function explainGit(msg, dir) {
+  const m = String(msg).split("\n").filter((l) => !/^hint:/.test(l)).join("\n").trim();
+  if (/took over 3 minutes/.test(m)) return problem("Git didn't finish within 3 minutes, so it was stopped. It is probably waiting for a GitHub sign-in that can't be shown here.", `Open PowerShell in ${dir}, run git push (or git pull) once and sign in when asked, then try again here.`);
+  if (/rejected|non-fast-forward|fetch first/i.test(m)) return problem("GitHub refused the push because it has commits this PC doesn't have yet.", "Pick Pull (or Fix diverged) in the Git dropdown first, then push again.", m);
+  if (/authentication|could not read username|permission denied|403|terminal prompts disabled/i.test(m)) return problem("GitHub didn't accept the sign-in for this repository.", `Open PowerShell in ${dir}, run git push once and sign in when asked, then try again here.`, m);
+  if (/could not resolve host|unable to access|timed out|connection/i.test(m)) return problem("This PC couldn't reach GitHub.", "Check the internet connection, then try again.", m);
+  if (/index\.lock|another git process/i.test(m)) return problem("Another program is using git in this folder right now.", `Wait for it to finish (or close it), then try again. If nothing is running, delete ${dir}\\.git\\index.lock and try again.`, m);
+  if (/tell me who you are|user\.email/i.test(m)) return problem("Git doesn't know your name and email, so it can't commit.", 'In PowerShell run: git config --global user.name "Your Name" and git config --global user.email you@example.com, then try again.', m);
+  if (/no upstream|no tracking information/i.test(m)) return problem("This branch isn't linked to a branch on GitHub.", "Pick Push once to create it on GitHub, then try again.", m);
+  return problem("Git reported an error.", "Read the details below. If they don't make sense, send a screenshot of this message to Claude.", m);
+}
 const readBody = (req) => new Promise((resolve) => { let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => resolve(b)); });
 
 const server = createServer(async (req, res) => {
@@ -88,7 +105,7 @@ const server = createServer(async (req, res) => {
   }
   const key = req.method === "POST" && req.url.startsWith("/checkpoint/") ? decodeURIComponent(req.url.slice(12)) : "";
   if (byKey(key)?.cmd) {
-    if (jobs[key]?.status === "running") { res.writeHead(409, cors).end("already running"); return; }
+    if (jobs[key]?.status === "running") { fail(res, 409, "A checkpoint is already running for this project.", "Wait for it to finish; the card shows a clock while it runs."); return; }
     runClaude(key, byKey(key).cmd, { kind: "checkpoint" });
     res.writeHead(200, cors).end("started");
     return;
@@ -96,15 +113,15 @@ const server = createServer(async (req, res) => {
   // Reply to the project's job, or (with sessionId) to one of the project's Claude Code sessions.
   const rk = req.method === "POST" && req.url.startsWith("/reply/") ? decodeURIComponent(req.url.slice(7)) : "";
   if (byKey(rk)) {
-    if (!ownPage(req)) { res.writeHead(403).end("forbidden"); return; }
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
     let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
-    if (jobs[rk]?.status === "running") { res.writeHead(409, cors).end("Claude is still working on this project. Wait for it to finish."); return; }
+    if (jobs[rk]?.status === "running") { fail(res, 409, "Claude is still working on this project, so it can't take a new message yet.", "Wait until the Claude is working panel goes away, then send your answer."); return; }
     const sid = body.sessionId ? String(body.sessionId) : jobs[rk]?.sessionId;
-    if (!sid || !isSessionId(sid) || (body.sessionId && !sessionFiles(byKey(rk).dir).some((f) => f.id === sid))) { res.writeHead(409, cors).end("nothing to reply to"); return; }
+    if (!sid || !isSessionId(sid) || (body.sessionId && !sessionFiles(byKey(rk).dir).some((f) => f.id === sid))) { fail(res, 409, "That Claude session can't be found any more, so there is nothing to reply to.", "Click Refresh now to load the current sessions, then try again."); return; }
     const job = jobs[rk]?.sessionId === sid ? jobs[rk] : null;
     const allow = body.allow && job ? [...new Set(job.denials.map(allowSpec))] : [];
     const text = String(body.text || "").trim().slice(0, 20000) || (allow.length ? "Permission granted. Continue." : "");
-    if (!text) { res.writeHead(400, cors).end("empty reply"); return; }
+    if (!text) { fail(res, 400, "The answer was empty.", "Type your answer in the box, then press Send."); return; }
     if (job) job.log += `\n[you] ${text}${allow.length ? "  (allowed: " + allow.join(", ") + ")" : ""}\n`;
     runClaude(rk, text, { resume: sid, allow, kind: job ? job.kind : "reply" });
     if (!job) jobs[rk].log = `[you] ${text}\n`;
@@ -114,12 +131,17 @@ const server = createServer(async (req, res) => {
   // Post the user's reply as a comment on an issue or pull request (the issues comments API covers both).
   const gk = req.method === "POST" && req.url.startsWith("/gh-comment/") ? decodeURIComponent(req.url.slice(12)) : "";
   if (byKey(gk)?.repo) {
-    if (!ownPage(req)) { res.writeHead(403).end("forbidden"); return; }
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
     let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
     const num = Number(body.number), text = String(body.text || "").trim().slice(0, 60000);
-    if (!Number.isInteger(num) || num < 1 || !text) { res.writeHead(400, cors).end("need an issue or PR number and some text"); return; }
+    if (!Number.isInteger(num) || num < 1 || !text) { fail(res, 400, "The comment was empty.", "Type your comment in the box, then press Post comment."); return; }
     const child = execFile("gh", ["api", `repos/${OWNER}/${byKey(gk).repo}/issues/${num}/comments`, "-F", "body=@-", "--jq", ".html_url"], { windowsHide: true }, (err, out, errOut) => {
-      if (err) { res.writeHead(500, cors).end(String(errOut || err.message).slice(0, 500)); return; }
+      if (err) {
+        const m = String(errOut || err.message);
+        if (/auth|login|401|403/i.test(m)) fail(res, 500, "GitHub didn't accept the comment because the gh tool isn't signed in.", "In PowerShell run: gh auth login, sign in, then try again.", m);
+        else fail(res, 500, "GitHub didn't accept the comment.", "Check the internet connection and try again. If it keeps failing, send a screenshot of this message to Claude.", m);
+        return;
+      }
       res.writeHead(200, cors).end(out.trim() || "posted");
       build().catch(() => {});
     });
@@ -130,11 +152,11 @@ const server = createServer(async (req, res) => {
   // remote has moved on, git refuses and says why. Files that look like secrets are never committed.
   const gk2 = req.method === "POST" && req.url.startsWith("/git/") ? decodeURIComponent(req.url.slice(5)) : "";
   if (byKey(gk2)) {
-    if (!ownPage(req)) { res.writeHead(403).end("forbidden"); return; }
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
     let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
     const act = body.action, message = String(body.message || "").trim().slice(0, 5000), dir = winDir(byKey(gk2).dir);
     const commits = act === "commit" || act === "both";
-    if (!["commit", "push", "both", "pull", "sync"].includes(act) || (commits && !message)) { res.writeHead(400, cors).end("need an action and, to commit, a message"); return; }
+    if (!["commit", "push", "both", "pull", "sync"].includes(act) || (commits && !message)) { fail(res, 400, act && commits ? "The commit message was empty." : "The dashboard sent an unknown Git action.", act && commits ? "Pick the option again and type a short message describing the change." : "Click Refresh now and try again."); return; }
     try {
       const out = [];
       const changedFiles = async () => [...new Set([
@@ -144,18 +166,20 @@ const server = createServer(async (req, res) => {
       // Pull rebases local commits on top of GitHub's. Commits already on GitHub are dropped by the rebase; on a
       // conflict the rebase is undone, so the folder is left exactly as it was.
       if (act === "pull" || act === "sync") {
-        if ((await changedFiles()).length) throw new Error("There are uncommitted changes. Commit them first, then pull.");
+        if ((await changedFiles()).length) throw new Error(problem("This folder has changes that aren't committed, so pulling could mix them up.", "Pick Commit in the Git dropdown first, then try again."));
         try { out.push(await git(dir, "pull", "--rebase")); }
         catch (e) {
           await git(dir, "rebase", "--abort").catch(() => {});
-          throw new Error(`Pull stopped and was undone, so nothing changed. Your commits and GitHub's touch the same lines; this needs merging by hand (or ask Claude in that project).\n\n${e.message.split("\n").filter((l) => !/^hint:/.test(l)).join("\n")}`);
+          if (!/conflict|could not apply/i.test(e.message)) throw new Error(explainGit(e.message, dir));
+          throw new Error(problem("Your commits and GitHub's change the same lines, so they can't be combined automatically. The pull was undone and nothing changed.",
+            `Open Claude Code in ${dir} and ask it to "pull from GitHub and resolve the merge conflicts", then come back and push.`, e.message.split("\n").filter((l) => !/^hint:/.test(l)).join("\n")));
         }
       }
       if (commits) {
         const changed = await changedFiles();
         const risky = changed.filter((f) => SECRETISH.test(f) && !/\.(example|sample|template)$/i.test(f));
-        if (risky.length) throw new Error(`Not committing: these look like secrets and should be in .gitignore:\n${risky.join("\n")}`);
-        if (!changed.length) throw new Error("Nothing to commit.");
+        if (risky.length) throw new Error(problem(`Nothing was committed, because these files look like passwords or keys:\n${risky.join("\n")}`, "Add them to the project's .gitignore file (or ask Claude in that project to do it), then commit again."));
+        if (!changed.length) throw new Error(problem("There's nothing to commit; every change is already committed.", "Nothing to do. Click Refresh now if the card still shows changes."));
         await git(dir, "add", "-A");
         out.push(await git(dir, "commit", "-m", message));
       }
@@ -164,13 +188,13 @@ const server = createServer(async (req, res) => {
         out.push(upstream ? await git(dir, "push") : await git(dir, "push", "-u", "origin", "HEAD"));
       }
       res.writeHead(200, cors).end(out.join("\n").trim() || "done"); // the page asks for the rebuild, so it can show that step
-    } catch (e) { res.writeHead(500, cors).end(String(e.message).trim().slice(-800)); }
+    } catch (e) { res.writeHead(500, cors).end(/\nWhat to do: /.test(e.message) ? e.message : explainGit(e.message, dir)); }
     return;
   }
   if (req.method === "POST" && req.url === "/refresh") {
     const cors = { "Access-Control-Allow-Origin": "*" }; // lets a double-clicked index.html trigger a refresh
     try { await build(); res.writeHead(200, cors).end("ok"); }
-    catch (e) { res.writeHead(500, cors).end(String(e.message).slice(0, 500)); }
+    catch (e) { fail(res, 500, "The dashboard couldn't collect the latest project data.", /gh|auth/i.test(e.message) ? "Make sure the gh tool is signed in (in PowerShell: gh auth status), then click Refresh now." : "Click Refresh now to try again. If it keeps failing, send a screenshot of this message to Claude.", e.message); }
     return;
   }
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
