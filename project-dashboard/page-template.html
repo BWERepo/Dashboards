@@ -239,11 +239,14 @@ function cards() {
     const [label, cls] = status(p), c = counts(p);
     if (p.loading) return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Collecting git, GitHub and Claude data for this project.</div></div>`;
     const upd = building && !fresh.has(p.key) ? `<span class="pill"><span class="spin sm" aria-hidden="true"></span> Updating</span>` : "";
-    const b = [upd, badge(p.key) || (asking(p).length ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : "")].filter(Boolean).join(" ");
+    const waiting = asking(p).length && JOBS[p.key]?.status !== "running";
+    // A question waiting for the user outranks a "done" badge; it comes with a button that opens the answer box.
+    const b = [upd, waiting ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : badge(p.key)].filter(Boolean).join(" ");
     return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
       <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
+      ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
       ${p.git ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
