@@ -12,3 +12,5 @@ for %%f in (build.mjs serve.mjs page-template.html projects.mjs refresh.cmd) do 
 )
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr "127.0.0.1:8788" ^| findstr LISTENING') do taskkill /pid %%p /f >nul
 start "Project dashboard" /min cmd /c "node serve.mjs --open"
+rem Last: replace this script itself. Both commands sit on one line, which cmd has already read, so this is safe.
+curl.exe -fsSL -o update.cmd.new "%B%/update.cmd" && (move /y update.cmd.new update.cmd >nul & exit /b 0)

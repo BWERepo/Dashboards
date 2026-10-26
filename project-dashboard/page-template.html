@@ -187,16 +187,16 @@ $("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; con
 // State lives here, not in the DOM, because cards() redraws every few seconds.
 const gitBusy = {}, gitNote = {};
 function gitButtons(p, c) {
-  const pushBlock = diverged(p) ? "diverged, pull and merge first" : p.git.behind ? "remote is ahead, pull first" : "";
+  const pushBlock = diverged(p) ? "diverged" : p.git.behind ? "pull first" : "";
   const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
   const note = gitNote[p.key];
   return `<div style="margin:10px 0 0"><select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
     <option value="">Git...</option>
-    ${opt("commit", "Commit", c.uncommitted ? "" : "nothing to commit")}
-    ${opt("push", "Push", pushBlock || (c.unpushed ? "" : "nothing to push"))}
-    ${opt("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "nothing to commit"))}
-    ${opt("pull", "Pull", !p.git.upstream ? "no upstream" : !p.git.behind ? "up to date" : c.uncommitted ? "commit first" : "")}
-    ${opt("sync", "Fix diverged", !p.git.upstream ? "no upstream" : !(p.git.behind && p.git.ahead) ? "not diverged" : c.uncommitted ? "commit first" : "")}
+    ${opt("commit", "Commit", c.uncommitted ? "" : "none")}
+    ${opt("push", "Push", pushBlock || (c.unpushed ? "" : "none"))}
+    ${opt("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "none"))}
+    ${opt("pull", "Pull", !p.git.upstream ? "no remote" : !p.git.behind ? "up to date" : c.uncommitted ? "commit first" : "")}
+    ${opt("sync", "Fix diverged", !p.git.upstream ? "no remote" : !(p.git.behind && p.git.ahead) ? "not diverged" : c.uncommitted ? "commit first" : "")}
   </select></div>${note ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
 }
 async function gitAction(key, act) {
