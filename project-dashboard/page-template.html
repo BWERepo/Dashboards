@@ -40,6 +40,7 @@ textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid v
 .tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:4px 0 10px}
 #auto{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);margin-left:8px}
 .rbtn:disabled{opacity:.6;cursor:wait}
+.ibtn:disabled{opacity:.45;cursor:not-allowed}
 details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:6px 0}
 summary{cursor:pointer;font-weight:600}
 pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 2px}
@@ -47,6 +48,42 @@ ul.items{margin:6px 0;padding-left:20px}ul.items li{margin:3px 0}
 code{font:13px ui-monospace,Consolas,monospace;background:var(--chip);padding:1px 5px;border-radius:4px}
 .empty{color:var(--mute);padding:18px;text-align:center;background:var(--card);border:1px dashed var(--line);border-radius:10px}
 .tbl{overflow-x:auto}
+.card.pick{cursor:pointer}.card.pick:hover,.card.pick:focus-visible{border-color:var(--accent);outline:none}
+body.locked{overflow:hidden}
+.full{position:fixed;inset:0;z-index:10;background:var(--bg);display:flex;flex-direction:column}
+.full[hidden]{display:none}
+.fbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+.fbar h2{font-size:19px;margin:0}
+.fbar .grow{flex:1;min-width:160px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:inherit;border:0;background:var(--card);color:var(--ink);padding:5px 12px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--accent);color:#fff}
+.ibtn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:5px 12px;border-radius:8px;cursor:pointer}
+.fbody{flex:1;min-height:0;overflow:auto;padding:12px 16px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;height:100%;min-height:0}
+.col{display:flex;flex-direction:column;min-height:0;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.col>h3{margin:0;padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.colbody{flex:1;min-height:0;overflow:auto;padding:10px 14px}
+@media (max-width:900px){.cols{grid-template-columns:1fr;height:auto}.colbody{overflow:visible}}
+.need{border:2px solid var(--bad);border-radius:10px;background:var(--card);margin:12px 16px 0;padding:10px 14px;max-height:45vh;overflow:auto}
+.needhead{font-size:20px;font-weight:800;letter-spacing:.03em;color:var(--bad);text-transform:uppercase}
+.needitem{border-top:1px solid var(--line);padding:10px 0 4px;margin-top:8px}
+.needitem:first-of-type{border-top:0;margin-top:0}
+.msg{margin:8px 0;padding:8px 11px;border-radius:10px;max-width:92%;background:var(--chip)}
+.msg.user{margin-left:auto;background:color-mix(in srgb,var(--accent) 14%,var(--card))}
+.msg.tool{background:none;padding:1px 11px;margin:2px 0;font:12px/1.45 ui-monospace,Consolas,monospace;color:var(--mute);word-break:break-all}
+.msg .txt{white-space:pre-wrap;word-break:break-word}
+.meta{font-size:12px;color:var(--mute)}
+.sess{padding:6px 12px}
+.sess>summary{font-weight:600}
+.ev{border-bottom:1px solid var(--line);padding:8px 0}
+.ev:last-child{border-bottom:0}
+.ev details{border:0;padding:0;margin:4px 0 0;background:none}
+.ev summary{font-weight:400;font-size:13px;color:var(--mute)}
+.filters{display:inline-flex;gap:4px;flex-wrap:wrap;font-weight:400}
+.filters button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:2px 9px;border-radius:99px;cursor:pointer}
+.filters button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.note{font-size:12px;color:var(--mute)}
 </style>
 </head>
 <body>
@@ -59,6 +96,7 @@ code{font:13px ui-monospace,Consolas,monospace;background:var(--chip);padding:1p
   <nav id="tabs"></nav>
   <section id="detail"></section>
 </main>
+<div id="full" class="full" role="dialog" aria-modal="true" aria-labelledby="ftitle" hidden></div>
 <script>
 window.addEventListener("error", (e) => {
   const d = document.querySelector("#detail") || document.body;
@@ -69,8 +107,12 @@ if (!DATA) throw new Error("This is the blank page-template.html, not the dashbo
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const ago = (iso) => { if (!iso) return "never"; const h = (Date.now() - Date.parse(iso)) / 36e5; return h < 1 ? "just now" : h < 48 ? Math.round(h) + " h ago" : Math.round(h / 24) + " days ago"; };
-const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "-";
-let tab = "overview";
+// Browser-local time, 12-hour clock.
+const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) : "-";
+const md = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
+// The open project is kept in the address (#p=KEY) so a reload comes back to it.
+let tab = (() => { const k = decodeURIComponent((location.hash.match(/^#p=(.+)$/) || [])[1] || ""); return DATA.projects.some((p) => p.key === k) ? k : "overview"; })();
+let view = "messages", ghFilter = "all";
 
 const SERVER = "http://127.0.0.1:8788";
 const AUTO_KEY = "projdash-auto";
@@ -118,10 +160,12 @@ function status(p) {
 function cards() {
   $("#cards").innerHTML = DATA.projects.map((p) => {
     const [label, cls] = status(p), c = counts(p);
-    return `<div class="card"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
-      <div class="big ${cls}">${label}</div>${badge(p.key) ? `<div>${badge(p.key)}</div>` : ""}
+    const b = badge(p.key) || (asking(p).length ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : "");
+    return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
+      <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : esc(p.error)}</div>
       <div class="row"><div><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div title="Local and remote have split"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : `<div><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div><b>${c.prs}</b><small>Open PRs</small></div></div>
+      ${p.git ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
 }
@@ -129,8 +173,58 @@ function cards() {
 function tabs() {
   const items = [["overview", "Overview"], ...DATA.projects.map((p) => [p.key, p.key])];
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
-  $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { tab = k; tabs(); render(); } };
+  $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
+$("#cards").onclick = (e) => { const b = e.target.closest("[data-git]"); if (b) { gitAction(b); return; } const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
+$("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
+
+// Commit, Push and Commit & push on every card; a button is greyed out (with the reason on hover) when it has nothing to do.
+// Push is a plain `git push` to the upstream, never a force push, so it is off when the branch is behind or has diverged.
+// State lives here, not in the DOM, because cards() redraws every few seconds.
+const gitBusy = {}, gitNote = {};
+function gitButtons(p, c) {
+  const pushBlock = diverged(p) ? "Local and remote have diverged. Pull and merge first." : p.git.behind ? "The remote has newer commits. Pull first." : "";
+  const btn = (act, label, why) => `<button class="${why ? "ibtn" : "rbtn"}" style="margin:0" data-git="${act}" data-key="${esc(p.key)}" ${why || gitBusy[p.key] ? "disabled" : ""} ${why ? `title="${esc(why)}"` : ""}>${label}</button>`;
+  const note = gitNote[p.key];
+  return `<div class="tools" style="margin:10px 0 0">
+    ${btn("commit", "Commit", c.uncommitted ? "" : "Nothing to commit")}
+    ${btn("push", "Push", pushBlock || (c.unpushed ? "" : "Nothing to push"))}
+    ${btn("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "Nothing to commit"))}
+  </div>${note ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+}
+async function gitAction(btn) {
+  const p = DATA.projects.find((x) => x.key === btn.dataset.key), act = btn.dataset.git, g = p.git;
+  const say = (text, bad) => { gitNote[p.key] = { text, bad }; cards(); };
+  const files = g.files.map((f) => `${f.kind}: ${f.path}`), list = (a) => a.slice(0, 15).join("\n") + (a.length > 15 ? `\n...and ${a.length - 15} more` : "");
+  let message = "";
+  if (act !== "push") {
+    message = prompt(`${act === "both" ? "Commit and push" : "Commit"} all ${files.length} changed file(s) in ${p.key} on ${g.branch}:\n\n${list(files)}\n\nCommit message:`, `Update ${files.length} file${files.length > 1 ? "s" : ""}`);
+    if (message === null) return;
+    if (!message.trim()) { say("A commit message is needed.", true); return; }
+  } else if (!confirm(`Push ${g.unpushed.length} commit(s) on ${g.branch} to ${g.upstream || "origin"} for ${p.key}?\n\n${list(g.unpushed)}`)) return;
+  if (location.protocol !== "http:") { say("This needs the local server. Double-click refresh.cmd, then try again.", true); return; }
+  gitBusy[p.key] = true;
+  say(act === "commit" ? "Committing..." : act === "push" ? "Pushing..." : "Committing and pushing...");
+  try {
+    const r = await fetch("/git/" + encodeURIComponent(p.key), { method: "POST", body: JSON.stringify({ action: act, message }) });
+    const text = await r.text();
+    if (!r.ok) throw new Error(text);
+    location.reload(); // the server rebuilt the data
+  } catch (err) { gitBusy[p.key] = false; say("Failed: " + err.message, true); }
+}
+
+// Selecting a project opens it over the whole window and asks the browser for real full screen too.
+function openProject(k) {
+  tab = k; view = "messages";
+  history.replaceState(null, "", k === "overview" ? location.pathname : "#p=" + encodeURIComponent(k));
+  if (k !== "overview" && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+  tabs(); render();
+}
+function closeProject() {
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  openProject("overview");
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && tab !== "overview" && !document.fullscreenElement) closeProject(); });
 
 function overview() {
   const commit = DATA.projects.filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
@@ -141,19 +235,36 @@ function overview() {
     ${issues.map((i) => `<tr><td>${esc(i.p.key)}</td><td>${i.t}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number} ${esc(i.title)}</a></td><td>${ago(i.updatedAt)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No open issues or pull requests.</div>`);
 }
 
-const CMDS = { BWE: "/BWECheckpoint", BWE_HDBS: "/BWEHDBSCheckpoint", BWE_OneClickAnswers: "/BWEOCACheckpoint", BWE_JKClassicBuggies: "/BWEJKCBCheckpoint" };
+const CMDS = Object.fromEntries(DATA.projects.filter((p) => p.cmd).map((p) => [p.key, p.cmd]));
 let JOBS = {};
+const live = location.protocol === "http:"; // replies need the local server (refresh.cmd)
 const clock = (j) => { const s = Math.round(((j.endedAt || Date.now()) - j.startedAt) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
-const badge = (key) => { const j = JOBS[key]; return !j ? "" : j.status === "running" ? `<span class="pill warn">&#9201; Checkpoint ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill warn">&#9888; Claude needs input</span>` : j.status === "done" ? `<span class="pill ok">&#10003; Checkpoint done</span>` : `<span class="pill bad">&#10007; Checkpoint failed</span>`; };
+const badge = (key) => {
+  const j = JOBS[key]; if (!j) return "";
+  const what = j.kind === "reply" ? "Claude" : "Checkpoint";
+  return j.status === "running" ? `<span class="pill warn">&#9201; ${what} working ${clock(j)}</span>` : j.status === "waiting" ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : j.status === "done" ? `<span class="pill ok">&#10003; ${what} done</span>` : `<span class="pill bad">&#10007; ${what} failed</span>`;
+};
+// Everything in a project that is waiting on the user: a stopped headless job, and recent sessions that ended on a question.
+function asking(p) {
+  const j = JOBS[p.key], out = [];
+  if (j && j.status === "waiting") out.push({ job: true, sessionId: j.sessionId, title: j.kind === "reply" ? "Claude replied in a session" : "Checkpoint " + (CMDS[p.key] || ""), text: j.result, at: j.endedAt && new Date(j.endedAt).toISOString(), denials: j.denials || [] });
+  for (const s of p.sessions || []) {
+    const last = [...s.messages].reverse().find((m) => m.role === "claude");
+    // A reply sent from here after Claude's question supersedes it; the job above carries the new state.
+    if (!s.asking || (j && j.sessionId === s.id && j.startedAt >= Date.parse(last?.at || s.updatedAt) - 1000)) continue;
+    out.push({ sessionId: s.id, title: s.title, text: last?.text || "", at: last?.at || s.updatedAt, denials: [] });
+  }
+  return out;
+}
 const sig = (o) => Object.entries(o).map(([k, j]) => k + j.status + (j.denials?.length || 0)).join();
 async function poll() {
-  if (location.protocol !== "http:") return;
+  if (!live) return;
   try {
     const next = await (await fetch("/status", { cache: "no-store" })).json();
     const finished = Object.keys(next).some((k) => JOBS[k]?.status === "running" && next[k].status !== "running");
     const changed = sig(next) !== sig(JOBS);
     JOBS = next;
-    if (finished) { location.reload(); return; } // the server rebuilt the data
+    if (finished) { setTimeout(() => location.reload(), 4000); return; } // the server is rebuilding the data
     cards();
     if (changed && tab !== "overview") { render(); return; }
     // Same state: refresh only the log and clock so a half-typed reply is not wiped.
@@ -162,31 +273,60 @@ async function poll() {
     if (b) b.innerHTML = badge(tab);
   } catch {}
 }
-function pick(o) { const t = $("#reply"); t.value = (t.value ? t.value + " " : "") + o; t.focus(); }
-document.addEventListener("keydown", (e) => { if (e.target.id === "reply" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) reply(tab, false); });
-async function reply(key, allow) {
-  const text = ($("#reply")?.value || "").trim();
-  if (!allow && !text) return;
+
+// Reply boxes. Ctrl+Enter sends; the box's button says where the text goes.
+let boxN = 0;
+const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" data-msg="${id}"></div>`; };
+document.addEventListener("keydown", (e) => { if (e.target.tagName === "TEXTAREA" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.target.closest(".tools")?.querySelector("button.send")?.click(); });
+document.addEventListener("click", async (e) => {
+  const opt = e.target.closest("[data-pick]");
+  if (opt) { const t = document.getElementById(opt.dataset.for); t.value = (t.value ? t.value + " " : "") + opt.dataset.pick; t.focus(); return; }
+  const btn = e.target.closest("button[data-send]");
+  if (!btn) return;
+  const box = btn.dataset.box && document.getElementById(btn.dataset.box), text = (box?.value || "").trim(), allow = btn.dataset.allow === "1";
+  const say = (m) => { const n = document.querySelector(`[data-msg="${btn.dataset.box}"]`); if (n) n.textContent = m; };
+  if (!allow && !text) { box?.focus(); return; }
+  if (!live) { say("Replies need the local server. Double-click refresh.cmd, then reply from http://127.0.0.1:8788."); return; }
+  btn.disabled = true;
   try {
-    const r = await fetch("/reply/" + key, { method: "POST", body: JSON.stringify({ text, allow }) });
+    const gh = btn.dataset.send === "gh";
+    if (gh && !confirm(`Post this as a GitHub comment on #${btn.dataset.number}?\n\n${text.slice(0, 400)}`)) { btn.disabled = false; return; }
+    const r = await fetch((gh ? "/gh-comment/" : "/reply/") + encodeURIComponent(tab), { method: "POST",
+      body: JSON.stringify(gh ? { number: Number(btn.dataset.number), text } : { text, allow, sessionId: btn.dataset.session || undefined }) });
     if (!r.ok) throw new Error(await r.text());
-    await poll(); render();
-  } catch (err) { $("#cpmsg").textContent = "Could not send: " + err.message; }
-}
+    if (box) box.value = "";
+    if (gh) { say(""); btn.closest(".ev")?.insertAdjacentHTML("beforeend", `<div class="note ok">Posted. It shows here after the next refresh.</div>`); btn.disabled = false; }
+    else { await poll(); render(); }
+  } catch (err) { btn.disabled = false; say("Could not send: " + err.message); }
+});
 const denialText = (d) => d.tool_name + (d.tool_input?.command ? ": " + d.tool_input.command : d.tool_input?.file_path ? ": " + d.tool_input.file_path : "");
+
+// The USER INPUT NEEDED block at the top of a project, in the format the project instructions ask for.
+function needPanel(p) {
+  const items = asking(p);
+  if (!items.length) return "";
+  return `<div class="need" role="alert"><div class="needhead">&#128680; USER INPUT NEEDED &#128680;</div>${items.map((it) => {
+    const id = "box" + (boxN + 1);
+    // Lettered options in the question (A:, B), C.) become quick-fill buttons; the answer is still sent by the user.
+    const opts = [...new Set([...(it.text || "").matchAll(/^\s*(?:[-*]\s*)?\**\(?([A-D])[:.)]/gm)].map((m) => m[1]))];
+    const rec = (it.text || "").match(/^.*\brecommend.*$/im)?.[0];
+    return `<div class="needitem">
+      <div><b>Action Required:</b> Claude is waiting on you in <b>${esc(it.title)}</b> <span class="meta">· ${fmt(it.at)}</span></div>
+      <div class="asktext">${md(it.text)}</div>
+      ${it.denials.length ? `<div><b>Claude was blocked from:</b></div><ul class="items">${it.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" data-send="claude" data-allow="1" data-box="${id}">Allow these and continue</button>` : ""}
+      ${opts.length ? `<div class="tools"><b>Options:</b> ${opts.map((o) => `<button class="opt" data-pick="${o}" data-for="${id}">Option ${o}</button>`).join("")}</div>` : ""}
+      ${rec ? `<div><b>Recommendation:</b> ${md(rec.replace(/^[\s*#>-]+/, ""))}</div>` : ""}
+      ${it.sessionId ? replyBox(`data-send="claude" ${it.job ? "" : `data-session="${esc(it.sessionId)}"`}`, "Type your answer") : ""}
+      <div class="note"><b>Awaiting your response before proceeding.</b></div></div>`;
+  }).join("")}</div>`;
+}
+
 function jobPanel(key) {
   const j = JOBS[key];
   if (!j) return "";
-  const waiting = j.status !== "running";
-  // Lettered options in the question (A:, B), C.) become quick-fill buttons; the answer is still sent by the user.
-  const opts = waiting ? [...new Set([...(j.result || "").matchAll(/^\s*(?:[-*]\s*)?\**\(?([A-D])[:.)]/gm)].map((m) => m[1]))] : [];
-  const ask = waiting && j.status === "waiting" && j.result ? `<div class="ask"><div class="sub"><b>Claude is asking:</b></div><div class="asktext">${esc(j.result)}</div>
-    ${opts.length ? `<div class="tools">${opts.map((o) => `<button class="opt" onclick="pick('${o}')">Option ${o}</button>`).join("")}</div>` : ""}</div>` : "";
-  return `<div class="card" style="margin:8px 0">
-    ${ask}
-    <details ${ask ? "" : "open"}><summary>Activity log</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details>
-    ${waiting && j.denials?.length ? `<div class="sub bad">Claude was blocked from:</div><ul class="items">${j.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" onclick="reply('${key}', true)">Allow these and continue</button>` : ""}
-    ${waiting && j.sessionId ? `<div class="tools"><textarea id="reply" rows="2" placeholder="Type your answer (Ctrl+Enter to send)..."></textarea><button class="rbtn" style="margin:0" onclick="reply('${key}', false)">Send</button></div>` : ""}
+  return `<div class="card" style="margin:0 0 10px"><div class="tools" style="margin:0 0 6px"><b>${j.kind === "reply" ? "Reply sent from this dashboard" : "Checkpoint run"}</b> <span id="jobbadge">${badge(key)}</span> <span class="meta">${fmt(new Date(j.startedAt).toISOString())}</span></div>
+    <details ${j.status === "running" ? "open" : ""}><summary>Activity log</summary><pre id="joblog" class="joblog">${esc(j.log || "Starting...")}</pre></details>
+    ${j.status !== "running" && j.status !== "waiting" && j.sessionId ? `<details><summary>Continue this conversation</summary>${replyBox(`data-send="claude"`, "Message Claude")}</details>` : ""}
   </div>`;
 }
 setInterval(poll, 3000); poll();
@@ -197,7 +337,7 @@ async function checkpoint(key) {
   try {
     const r = await fetch(SERVER + "/checkpoint/" + key, { method: "POST" });
     if (!r.ok) throw new Error(await r.text());
-    if (location.protocol !== "http:") { location.href = SERVER; return; }
+    if (!live) { location.href = SERVER + "/#p=" + encodeURIComponent(key); return; }
     await poll(); render();
   } catch {
     try { await navigator.clipboard.writeText(CMDS[key]); msg.textContent = "Server not running. Copied " + CMDS[key] + ". Paste it into Claude Code in that project."; }
@@ -205,14 +345,65 @@ async function checkpoint(key) {
   }
 }
 
+// Claude column: the dashboard's own run for this project, then the newest Claude Code sessions in its folder.
+function claudeCol(p) {
+  const who = { user: "You", claude: "Claude", tool: "" };
+  const waits = new Set(asking(p).filter((x) => !x.job).map((x) => x.sessionId));
+  const sessions = (p.sessions || []).map((s, i) => `<details class="sess card" style="margin:0 0 8px" ${i === 0 || waits.has(s.id) ? "open" : ""}>
+      <summary>${esc(s.title)} ${waits.has(s.id) ? `<span class="pill bad">Needs input</span>` : ""}<div class="meta">${fmt(s.updatedAt)} · ${s.total} messages${s.total > s.messages.length ? `, newest ${s.messages.length} shown` : ""}</div></summary>
+      ${s.messages.map((m) => m.role === "tool" ? `<div class="msg tool">&#8250; ${esc(m.text)}</div>` : `<div class="msg ${m.role}"><div class="meta">${who[m.role]} · ${fmt(m.at)}</div><div class="txt">${md(m.text)}</div></div>`).join("")}
+      ${waits.has(s.id) ? `<div class="note warn">Claude is waiting on you. Answer in the USER INPUT NEEDED box above.</div>` : `<details><summary>Reply to this session</summary>${replyBox(`data-send="claude" data-session="${esc(s.id)}"`, "Message Claude")}<div class="note">Sends with <code>claude --resume</code> in the background. Avoid this while the same session is open in a terminal.</div></details>`}
+    </details>`).join("");
+  return jobPanel(p.key) + (sessions || `<div class="empty">No Claude Code sessions found for <code>${esc(p.dir)}</code>.</div>`);
+}
+
+// GitHub column: one newest-first timeline of issues, PRs, comments, commits and Actions runs.
+const GH_TYPES = { all: "All", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
+function ghCol(p) {
+  const r = p.remote;
+  if (!r.url) return `<div class="empty">No GitHub repo for this project.</div>`;
+  const list = (r.activity || []).filter((i) => ghFilter === "all" || i.type === ghFilter || (ghFilter === "talk" && (i.type === "issue" || i.type === "pr")));
+  const stateCls = (s) => /fail|cancel|timed|startup/.test(s) ? "bad" : /success|merged|closed|completed/.test(s) ? "ok" : "warn";
+  const label = (i) => i.type === "issue" ? `Issue #${i.number}` : i.type === "pr" ? `PR #${i.number}` : i.type === "comment" ? "Comment" : i.type === "commit" ? `Commit ${esc(i.sha)}` : "Action";
+  return list.map((i) => `<div class="ev">
+      <span class="pill">${label(i)}</span> <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> ${i.state ? `<span class="pill ${stateCls(i.state)}">${esc(i.state)}</span>` : ""}
+      <div class="meta">${esc(i.author || "")} · ${fmt(i.at)}${i.created && i.created !== i.at ? " · opened " + fmt(i.created) : ""}</div>
+      ${i.body ? `<details ${i.type === "comment" ? "open" : ""}><summary>Message</summary><div class="asktext">${md(i.body)}</div></details>` : ""}
+      ${i.number && (i.type !== "issue" && i.type !== "pr" || i.state !== "closed") ? `<details><summary>Reply on GitHub</summary>${replyBox(`data-send="gh" data-number="${i.number}"`, `Comment on #${i.number}`, "Post comment")}</details>` : ""}
+    </div>`).join("") || `<div class="empty">No GitHub activity${ghFilter === "all" ? "" : " of this kind"}.</div>`;
+}
+
+function fullView(p) {
+  const [label, cls] = status(p), job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
+  return `<div class="fbar">
+      <div class="grow"><h2 id="ftitle">${esc(p.key)} <span class="pill ${cls}">${label}</span> <span id="jobbadge">${badge(p.key)}</span></h2><div class="sub">${esc(p.name)} · <code>${esc(p.dir)}</code>${p.remote.url ? ` · <a href="${p.remote.url}" target="_blank" rel="noopener">GitHub</a>` : ""}</div></div>
+      ${CMDS[p.key] && !busy ? `<button class="rbtn" style="margin:0" data-act="checkpoint">Checkpoint</button>` : ""}<span class="sub" id="cpmsg"></span>
+      <div class="seg" role="group" aria-label="View"><button data-view="messages" aria-pressed="${view === "messages"}">Messages</button><button data-view="details" aria-pressed="${view === "details"}">Details</button></div>
+      <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
+      <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>
+    </div>
+    ${needPanel(p)}
+    <div class="fbody">${view === "details" ? projectView(p) : `<div class="cols">
+      <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span></h3><div class="colbody">${claudeCol(p)}</div></section>
+      <section class="col" aria-label="GitHub messages"><h3>GitHub messages <span class="filters">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</span></h3><div class="colbody">${ghCol(p)}</div></section>
+    </div>`}</div>`;
+}
+$("#full").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act],[data-view],[data-gh]");
+  if (!t) return;
+  if (t.dataset.view) { view = t.dataset.view; render(); }
+  else if (t.dataset.gh) { ghFilter = t.dataset.gh; render(); }
+  else if (t.dataset.act === "close") closeProject();
+  else if (t.dataset.act === "checkpoint") checkpoint(tab);
+  else if (t.dataset.act === "fs") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}).finally(render);
+});
+document.addEventListener("fullscreenchange", () => { if (tab !== "overview") render(); });
+
 function projectView(p) {
   if (p.error) return `<div class="empty bad">${esc(p.error)}</div>`;
   const g = p.git, r = p.remote;
   const sync =!g.upstream ? "No upstream branch" : `${g.ahead} ahead / ${g.behind} behind ${esc(g.upstream)}`;
-  const job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
-  return `${CMDS[p.key] ? `<div class="tools">${busy ? "" : `<button class="rbtn" style="margin:0" onclick="checkpoint('${p.key}')">Checkpoint ${esc(p.key)}</button>`}<span id="jobbadge">${badge(p.key)}</span><span class="sub" id="cpmsg">${busy ? "" : `Runs <code>${CMDS[p.key]}</code> in the background.`}</span></div>
-  ${jobPanel(p.key)}` : ""}
-  <div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
+  return `<div class="sub"><code>${esc(p.dir)}</code> · ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">GitHub</a>` : "No GitHub repo"} · ${sync}${g.stashes ? " · " + g.stashes + " stash(es)" : ""}</div>
   <div class="sub">Last commit <code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} (${ago(g.last.date)})</div>
   <h3>Items to commit (${g.files.length})</h3>
   ${g.files.length ? `<div class="tbl"><table><tr><th>State</th><th>Path</th></tr>${g.files.map((f) => `<tr><td><span class="pill ${f.kind === "conflict" ? "bad" : "warn"}">${f.kind}</span></td><td class="path">${esc(f.path)}</td></tr>`).join("")}</table></div>` : `<div class="empty">Working tree is clean.</div>`}
@@ -224,9 +415,20 @@ function projectView(p) {
   ${p.doc ? `<div class="sub">${esc(p.doc.headline)}</div>${p.doc.open.length ? `<ul class="items">${p.doc.open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${p.doc.totalOpen > p.doc.open.length ? `<div class="sub">Showing ${p.doc.open.length} of ${p.doc.totalOpen}. See PROJECT_STATUS.md.</div>` : ""}` : `<div class="empty">No "still open" list in the newest entry.</div>`}` : `<div class="empty">No PROJECT_STATUS.md found.</div>`}`;
 }
 
+// Re-rendering keeps what the user has typed and where each pane was scrolled.
 function render() {
-  const p = DATA.projects.find((x) => x.key === tab);
-  $("#detail").innerHTML = p ? projectView(p) : overview();
+  $("#detail").innerHTML = overview();
+  const p = DATA.projects.find((x) => x.key === tab), full = $("#full");
+  document.body.classList.toggle("locked", !!p);
+  full.hidden = !p;
+  if (!p) { full.innerHTML = ""; return; }
+  const typed = [...full.querySelectorAll("textarea")].map((t) => t.value), scroll = [...full.querySelectorAll(".colbody,.fbody,.need")].map((el) => el.scrollTop);
+  const focus = document.activeElement?.tagName === "TEXTAREA" ? [...full.querySelectorAll("textarea")].indexOf(document.activeElement) : -1;
+  boxN = 0;
+  full.innerHTML = fullView(p);
+  full.querySelectorAll("textarea").forEach((t, i) => { if (typed[i]) { t.value = typed[i]; t.closest("details")?.setAttribute("open", ""); } });
+  full.querySelectorAll(".colbody,.fbody,.need").forEach((el, i) => { if (scroll[i]) el.scrollTop = scroll[i]; });
+  if (focus >= 0) full.querySelectorAll("textarea")[focus]?.focus();
 }
 cards(); tabs(); render();
 </script>
