@@ -1,8 +1,12 @@
 @echo off
 rem Downloads the latest project dashboard from GitHub (BWERepo/Dashboards, branch claude/project-thread-3c2lon),
-rem then restarts it. GitHub can take a few minutes to serve a just-pushed change.
+rem then restarts it. Files are fetched by the branch's newest commit id, because GitHub caches branch links for minutes.
 cd /d "%~dp0"
-set B=https://raw.githubusercontent.com/BWERepo/Dashboards/claude/project-thread-3c2lon/project-dashboard
+set SHA=
+for /f %%s in ('curl.exe -fsSL -H "Accept: application/vnd.github.sha" https://api.github.com/repos/BWERepo/Dashboards/commits/claude/project-thread-3c2lon') do set SHA=%%s
+if "%SHA%"=="" (echo Could not reach GitHub. Nothing was changed. & pause & exit /b 1)
+echo Updating to %SHA%
+set B=https://raw.githubusercontent.com/BWERepo/Dashboards/%SHA%/project-dashboard
 for %%f in (build.mjs serve.mjs page-template.html projects.mjs refresh.cmd) do (
   curl.exe -fsSL -o "%%f.new" "%B%/%%f" && move /y "%%f.new" "%%f" >nul && echo Updated %%f || echo Could not download %%f
 )
