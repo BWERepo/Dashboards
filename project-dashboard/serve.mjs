@@ -2,15 +2,49 @@
 // Usage: node project-dashboard/serve.mjs [--open]   (http://127.0.0.1:8788)
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { OWNER, asksUser, byKey, isSessionId, sessionFiles, winDir } from "./projects.mjs";
+import { OWNER, PROJECTS, asksUser, byKey, isSessionId, sessionFiles, winDir } from "./projects.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = 8788;
-const build = () => new Promise((resolve, reject) =>
-  execFile("node", [join(here, "build.mjs")], { cwd: here }, (err, out, errOut) => (err ? reject(new Error(errOut || err.message)) : resolve(out))));
+// The data is collected by build.mjs, which prints each project as it finishes ("@@project {json}"). Those are kept
+// here so the page can show every project as soon as it arrives (GET /progress) instead of waiting for all of them.
+// A build asked for while one is running is queued (once), so it still picks up the newest state.
+const progress = { run: 0, running: false, seq: 0, done: 0, total: PROJECTS.length, projects: {}, startedAt: null, generatedAt: null, error: null };
+let current = null, queued = null;
+function build() {
+  if (!current) return (current = runBuild().finally(() => { current = null; }));
+  return (queued ||= current.catch(() => {}).then(() => { queued = null; return build(); }));
+}
+function runBuild() {
+  const run = ++progress.run;
+  Object.assign(progress, { running: true, done: 0, startedAt: Date.now(), error: null });
+  return new Promise((resolve, reject) => {
+    const child = spawn("node", [join(here, "build.mjs")], { cwd: here, windowsHide: true });
+    let buf = "", errOut = "", ended = false;
+    child.stdout.on("data", (d) => {
+      buf += d; const lines = buf.split("\n"); buf = lines.pop();
+      for (const l of lines) if (l.startsWith("@@project ")) try {
+        const p = JSON.parse(l.slice(10).trim());
+        progress.projects[p.key] = { ...p, run, seq: ++progress.seq }; progress.done++;
+      } catch {}
+    });
+    child.stderr.on("data", (d) => { errOut = (errOut + d).slice(-4000); });
+    const end = (err) => {
+      if (ended) return; ended = true;
+      progress.running = false;
+      if (err) { progress.error = problem("The dashboard couldn't collect the latest project data.", /gh|auth/i.test(err.message) ? "Make sure the gh tool is signed in (in PowerShell: gh auth status), then click Refresh now." : "Click Refresh now to try again. If it keeps failing, send a screenshot of this message to Claude.", err.message); reject(err); }
+      else { progress.generatedAt = new Date().toISOString(); resolve(); }
+    };
+    child.on("error", end);
+    child.on("close", (code) => end(code ? new Error(errOut || `build.mjs stopped with exit code ${code}`) : null));
+  });
+}
+// Shown when there is no index.html yet (the very first start): every card says it is loading.
+const blankPage = () => readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify({ generatedAt: null,
+  projects: PROJECTS.map((p) => ({ key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null, loading: true, remote: { url: null, issues: [], prs: [], activity: [] }, sessions: [] })) }).replace(/</g, "\\u003c"));
 
 // Checkpoints, and replies to a project's Claude Code sessions, run headless (no window) as `claude -p` with
 // stream-json output, one job per project; progress is kept here and
@@ -191,15 +225,24 @@ const server = createServer(async (req, res) => {
     } catch (e) { res.writeHead(500, cors).end(/\nWhat to do: /.test(e.message) ? e.message : explainGit(e.message, dir)); }
     return;
   }
+  // Starts collecting (or queues it behind the run in progress) and answers at once with the run that will have the
+  // fresh data; the page then follows /progress.
   if (req.method === "POST" && req.url === "/refresh") {
-    const cors = { "Access-Control-Allow-Origin": "*" }; // lets a double-clicked index.html trigger a refresh
-    try { await build(); res.writeHead(200, cors).end("ok"); }
-    catch (e) { fail(res, 500, "The dashboard couldn't collect the latest project data.", /gh|auth/i.test(e.message) ? "Make sure the gh tool is signed in (in PowerShell: gh auth status), then click Refresh now." : "Click Refresh now to try again. If it keeps failing, send a screenshot of this message to Claude.", e.message); }
+    const busy = !!current;
+    build().catch(() => {});
+    res.writeHead(200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify({ run: busy ? progress.run + 1 : progress.run }));
+    return;
+  }
+  if (req.method === "GET" && req.url.startsWith("/progress")) {
+    const since = Number(new URL(req.url, "http://x").searchParams.get("since")) || 0;
+    const { projects, ...rest } = progress;
+    res.writeHead(200, { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" })
+      .end(JSON.stringify({ ...rest, queued: !!queued, projects: Object.values(projects).filter((p) => p.seq > since) }));
     return;
   }
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-    res.end(readFileSync(join(here, "index.html")));
+    res.end(existsSync(join(here, "index.html")) ? readFileSync(join(here, "index.html")) : blankPage());
     return;
   }
   res.writeHead(404).end();
@@ -211,7 +254,8 @@ server.on("error", (e) => {
 });
 server.listen(PORT, "127.0.0.1", async () => {
   console.log(`Dashboard at http://127.0.0.1:${PORT}  (Ctrl+C to stop)`);
-  try { await build(); } catch (e) { console.log("Initial build failed:", e.message); }
+  // The page opens straight away and fills in each project as its data arrives.
+  build().then(() => console.log("Data collected."), (e) => console.log("Collecting data failed:", e.message));
   if (process.argv.includes("--open")) open();
 });
 

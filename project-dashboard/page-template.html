@@ -97,6 +97,9 @@ body.locked{overflow:hidden}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin.sm{display:inline-block;vertical-align:-2px;width:11px;height:11px;margin:0 2px 0 0;border-width:2px}
 .attn{margin:12px 16px 0;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
+.plan ol{margin:8px 0 0;padding-left:22px}.plan li{margin:6px 0}.plan li label{cursor:pointer}.plan li .meta{margin-left:6px}.plan li .ibtn{margin-left:8px;padding:2px 10px;font-size:13px}
+.plan li.done label{text-decoration:line-through;color:var(--mute)}.plan input{margin:0 6px 0 0;vertical-align:-2px}
 .attn ul{margin:6px 0 0;padding:0;list-style:none}.attn li{margin:4px 0}.attn li .meta{margin-left:6px}
 </style>
 </head>
@@ -106,6 +109,7 @@ body.locked{overflow:hidden}
   <div class="sub" id="gen"></div>
 </header>
 <main>
+  <section id="plan" aria-label="Recommended actions"></section>
   <div class="grid" id="cards"></div>
   <nav id="tabs"></nav>
   <section id="detail"></section>
@@ -132,25 +136,76 @@ const SERVER = "http://127.0.0.1:8788";
 const AUTO_KEY = "projdash-auto";
 const getAuto = () => { try { return localStorage.getItem(AUTO_KEY) || "0"; } catch { return "0"; } };
 $("#gen").innerHTML = `<span id="stamp"></span> <select id="auto" aria-label="Auto refresh"><option value="0">Auto-refresh off</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select><button id="refresh" class="rbtn">Refresh now</button>`;
-$("#stamp").textContent = "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ").";
-async function refresh(manual) {
+const stamp = (t) => { $("#stamp").textContent = t; };
+const pulled = () => DATA.generatedAt ? "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ")." : "Loading project data...";
+stamp(pulled());
+const offline = "The dashboard server isn't running, so the data can't be updated.\nWhat to do: double-click refresh.cmd (or update.cmd) in the project-dashboard folder, then try again.";
+// Refresh asks the server to collect again and returns at once with the run that will hold the new data;
+// watchBuild() then fills in each project as it arrives.
+async function refresh() {
+  if (location.protocol !== "http:") { location.href = SERVER; return; } // a file copy moves to the live page
   const b = $("#refresh");
   b.disabled = true; b.textContent = "Refreshing...";
   try {
-    const onServer = location.protocol === "http:";
-    const r = await fetch((onServer ? "" : SERVER) + "/refresh", { method: "POST" });
+    const r = await fetch("/refresh", { method: "POST" });
     if (!r.ok) throw new Error(await r.text());
-    if (onServer) location.reload(); else location.href = SERVER; // a file copy moves to the live page
+    const { run } = await r.json();
+    watchBuild();
+    return run;
   } catch (err) {
     b.disabled = false; b.textContent = "Refresh now";
     // "Failed to fetch" means nothing answered at all: the dashboard server has stopped, not that a refresh went wrong.
-    $("#stamp").textContent = location.protocol === "http:" && !/failed to fetch|networkerror/i.test(err.message) ? (/What to do:/.test(err.message) ? err.message : "Refresh failed: " + err.message + " What to do: click Refresh now again; if it keeps failing, send a screenshot to Claude.") : "The dashboard server isn't running. Double-click refresh.cmd in the project-dashboard folder, then try again.";
+    stamp(/failed to fetch|networkerror/i.test(err.message) ? offline : /What to do:/.test(err.message) ? err.message : "Refresh failed: " + err.message + "\nWhat to do: click Refresh now again; if it keeps failing, send a screenshot to Claude.");
   }
 }
-$("#refresh").onclick = () => refresh(true);
+$("#refresh").onclick = () => refresh();
 $("#auto").value = getAuto();
-$("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} location.reload(); };
-if (getAuto() !== "0" && location.protocol === "http:") setTimeout(() => refresh(false), Number(getAuto()) * 60000);
+$("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
+let autoT = 0;
+function scheduleAuto() { clearTimeout(autoT); if (getAuto() !== "0" && location.protocol === "http:") autoT = setTimeout(refresh, Number(getAuto()) * 60000); }
+
+// Progressive loading: the server collects a few projects at a time and hands each over as soon as it is ready.
+// Each one replaces its card straight away; the action plan is worked out once every project is in.
+let SEQ = 0, RUN = 0, building = false, doneCount = 0, watching = null;
+const fresh = new Set(), waiters = [];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Resolves once the project has data from the given run (or the update stops), so a Git action can finish its clock.
+const waitFor = (key, run) => new Promise((resolve) => waiters.push({ key, run, resolve }));
+function redraw(keys) {
+  if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
+  $("#detail").innerHTML = overview();
+  drawPlan();
+  if (tab !== "overview" && keys.includes(tab)) render();
+}
+function watchBuild() {
+  if (!live) return Promise.resolve();
+  return (watching ||= (async () => {
+    for (;;) {
+      let pr;
+      try { pr = await (await fetch("/progress?since=" + SEQ, { cache: "no-store" })).json(); }
+      catch { stamp(offline); break; }
+      if (pr.run !== RUN) { RUN = pr.run; fresh.clear(); }
+      const keys = [];
+      for (const np of pr.projects) {
+        SEQ = Math.max(SEQ, np.seq); keys.push(np.key);
+        const i = DATA.projects.findIndex((p) => p.key === np.key);
+        if (i >= 0) DATA.projects[i] = np; else DATA.projects.push(np);
+        if (np.run === pr.run) fresh.add(np.key);
+        for (const w of waiters.filter((w) => w.key === np.key && np.run >= w.run)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(); }
+      }
+      building = pr.running || pr.queued; doneCount = pr.done;
+      if (building) { stamp(`Updating... ${pr.done} of ${pr.total} projects loaded.`); if (keys.length || !planReady) redraw(keys); await sleep(1000); continue; }
+      if (pr.generatedAt) DATA.generatedAt = pr.generatedAt;
+      stamp(pr.error || pulled());
+      fresh.clear(); updatePlan(); redraw(keys);
+      break;
+    }
+    building = false; watching = null;
+    waiters.splice(0).forEach((w) => w.resolve());
+    const b = $("#refresh"); b.disabled = false; b.textContent = "Refresh now";
+    scheduleAuto();
+  })());
+}
 
 // Outstanding = open GitHub issues + open PRs + the newest "still open" list from PROJECT_STATUS.md.
 // Ahead AND behind means local and remote have split (often squash-merged PRs), so "unpushed" is not a real count.
@@ -167,6 +222,7 @@ const folderProblem = (p) => /cannot change to|no such file/i.test(p.error) ? [`
   : /not a git repository/i.test(p.error) ? [`${p.dir} isn't a git repository.`, "Correct the path in projects.mjs, or ask Claude to set the folder up with git."]
   : ["Git couldn't read this project's folder.", "Click Refresh now. If it keeps failing, send a screenshot of this card to Claude."];
 function status(p) {
+  if (p.loading) return ["Loading...", ""];
   if (p.error) return ["Git error", "bad"];
   const c = counts(p);
   if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
@@ -179,7 +235,9 @@ function status(p) {
 function cards() {
   $("#cards").innerHTML = DATA.projects.map((p) => {
     const [label, cls] = status(p), c = counts(p);
-    const b = badge(p.key) || (asking(p).length ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : "");
+    if (p.loading) return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Collecting git, GitHub and Claude data for this project.</div></div>`;
+    const upd = building && !fresh.has(p.key) ? `<span class="pill"><span class="spin sm" aria-hidden="true"></span> Updating</span>` : "";
+    const b = [upd, badge(p.key) || (asking(p).length ? `<span class="pill bad">&#9888; USER INPUT NEEDED</span>` : "")].filter(Boolean).join(" ");
     return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
@@ -239,9 +297,11 @@ async function gitAction(key, act) {
   try {
     const r = await fetch("/git/" + encodeURIComponent(p.key), { method: "POST", body: JSON.stringify({ action: act, message }) });
     if (!r.ok) throw new Error(await r.text());
-    step = "Done. Updating the dashboard"; tick();
-    await fetch("/refresh", { method: "POST" }).catch(() => {});
-    location.reload();
+    step = "Done. Updating this card"; tick();
+    const run = await refresh();
+    if (run) await waitFor(p.key, run);
+    clearInterval(timer); gitBusy[p.key] = false;
+    say("\u2713 " + { commit: "Committed", push: "Pushed", both: "Committed and pushed", pull: "Pulled", sync: "Fixed: pulled, then pushed" }[act] + ". The card shows the new state.");
   } catch (err) { clearInterval(timer); gitBusy[p.key] = false; say(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? "The dashboard server isn't running, so nothing was done.\nWhat to do: double-click refresh.cmd in the project-dashboard folder, then try again." : err.message + "\nWhat to do: click Refresh now and try again. If it keeps failing, send a screenshot of this message to Claude.", true); }
 }
 
@@ -337,7 +397,7 @@ async function poll() {
     const finished = Object.keys(next).some((k) => JOBS[k]?.status === "running" && next[k].status !== "running");
     const changed = sig(next) !== sig(JOBS);
     JOBS = next;
-    if (finished) { setTimeout(() => location.reload(), 4000); return; } // the server is rebuilding the data
+    if (finished) watchBuild(); // the server is collecting the new commit/push state
     if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
     if (changed && tab !== "overview") { render(); return; }
     // Same state: refresh only the log and clock so a half-typed reply is not wiped.
@@ -461,24 +521,76 @@ function ghCol(p) {
     </div>`).join("") || `<div class="empty">${ghFilter === "attention" ? "Nothing on GitHub needs you: no open issues or PRs, and no Actions workflow whose latest run failed. Pick All activity to see everything." : `No GitHub activity${ghFilter === "all" ? "" : " of this kind"}.`}</div>`;
 }
 
-// The short answer to "what needs me here?", worked out from the data, each line saying what to do.
-function attention(p) {
-  const g = p.git, c = counts(p), items = [];
-  if (p.error) items.push(["bad", esc(folderProblem(p)[0]), "What to do: " + esc(folderProblem(p)[1])]);
+// What needs doing in a project, worked out from the data, most urgent first. Each item says what to do, and the
+// action plan (plan: true) gives it a checkbox and a button. ids are stable, so an item that drops out of the data
+// after the fix is ticked off.
+function todo(p) {
+  const g = p.git, c = counts(p), items = [], k = p.key;
+  const add = (pri, cls, id, what, todo, btn, plan = true) => items.push({ id: k + "|" + id, key: k, pri, cls, what, todo, btn, plan });
+  if (p.loading) return [];
+  const n = JOBS[k]?.status === "running" ? 0 : asking(p).length;
+  if (JOBS[k]?.status === "running") add(9, "warn", "running", "Claude is working on this project right now.", "Wait for it to finish; the page updates by itself.", null, false);
+  if (n) add(0, "bad", "answer", `Claude is waiting for your answer${n > 1 ? ` in ${n} places` : ""}.`, "Open the project and answer in the red box.", { label: "Answer", open: "" });
+  if (p.error) add(1, "bad", "folder", esc(folderProblem(p)[0]), "What to do: " + folderProblem(p)[1], null);
   else {
-    if (c.uncommitted) items.push(["warn", `${c.uncommitted} changed file${c.uncommitted > 1 ? "s" : ""} not committed.`, "Pick Commit in the Git dropdown on this project's card."]);
-    if (diverged(p)) items.push(["warn", `Diverged: ${g.ahead} commit(s) only on this PC, ${g.behind} only on GitHub.`, "Pick Fix diverged in the Git dropdown."]);
-    else if (g.behind) items.push(["warn", `GitHub has ${g.behind} newer commit(s) this PC doesn't have.`, "Pick Pull in the Git dropdown."]);
-    else if (c.unpushed) items.push(["warn", `${c.unpushed} commit(s) not pushed to GitHub.`, "Pick Push in the Git dropdown."]);
+    if (c.uncommitted) add(2, "warn", "commit", `${c.uncommitted} changed file${c.uncommitted > 1 ? "s" : ""} not committed.`, "Commit them (Git dropdown on the card).", { label: "Commit", git: "commit" });
+    if (diverged(p)) add(3, "warn", "sync", `Diverged: ${g.ahead} commit(s) only on this PC, ${g.behind} only on GitHub.`, c.uncommitted ? "Commit first, then Fix diverged." : "Pick Fix diverged (pulls, then pushes).", c.uncommitted ? null : { label: "Fix diverged", git: "sync" });
+    else if (g.behind) add(3, "warn", "pull", `GitHub has ${g.behind} newer commit(s) this PC doesn't have.`, c.uncommitted ? "Commit first, then Pull." : "Pull them.", c.uncommitted ? null : { label: "Pull", git: "pull" });
+    else if (c.unpushed) add(4, "warn", "push", `${c.unpushed} commit(s) not pushed to GitHub.`, "Push them.", { label: "Push", git: "push" });
   }
-  const n = JOBS[p.key]?.status === "running" ? 0 : asking(p).length;
-  if (JOBS[p.key]?.status === "running") items.push(["warn", "Claude is working on this project right now.", "Wait for it to finish; the page updates by itself."]);
-  if (n) items.push(["bad", `Claude is waiting for your answer${n > 1 ? ` in ${n} places` : ""}.`, "Answer in the red box below."]);
-  for (const i of p.remote.issues) items.push(["warn", `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Open it to read what's reported."]);
-  for (const x of p.remote.prs) items.push(["warn", `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on." : "Review and merge it, or close it."]);
-  for (const i of openFailures(p).slice(0, 3)) items.push(["bad", `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why."]);
-  return `<div class="attn"><b>What needs you</b>${items.length ? `<ul>${items.map(([cls, what, todo]) => `<li><span class="${cls}">&#9679;</span> ${what} <span class="meta">${todo}</span></li>`).join("")}</ul>` : ` <span class="ok">&#10003; Nothing. This project is up to date.</span>`}</div>`;
+  for (const i of openFailures(p).slice(0, 3)) add(1, "bad", "run|" + i.title.split(": ")[0], `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why, then ask Claude in this project to fix it.", { label: "See why", url: i.url });
+  for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft);
+  for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" });
+  return items.sort((a, b) => a.pri - b.pri);
 }
+// The short answer to "what needs me here?" at the top of a project.
+function attention(p) {
+  if (p.loading) return `<div class="attn"><b>What needs you</b> <span class="meta">Still loading this project's data...</span></div>`;
+  const items = todo(p);
+  return `<div class="attn"><b>What needs you</b>${items.length ? `<ul>${items.map((i) => `<li><span class="${i.cls}">&#9679;</span> ${i.what} <span class="meta">${esc(i.todo)}</span></li>`).join("")}</ul>` : ` <span class="ok">&#10003; Nothing. This project is up to date.</span>`}</div>`;
+}
+
+// Recommended actions across every project, shown once all of them have loaded. The list is kept in this browser:
+// an item that is no longer in the data is ticked as fixed; one can also be ticked by hand. Fixed items stay for 7 days.
+const PLAN_KEY = "projdash-plan";
+let plan = (() => { try { return JSON.parse(localStorage.getItem(PLAN_KEY)) || {}; } catch { return {}; } })(), planReady = false, planAll = false;
+const PLAN_SHOW = 8; // the most urgent few; the rest behind "Show all"
+const savePlan = () => { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch {} };
+function updatePlan() {
+  const now = Date.now(), order = DATA.projects.map((p) => p.key);
+  const cur = DATA.projects.flatMap((p) => todo(p).filter((i) => i.plan));
+  if (DATA.projects.some((p) => p.loading)) return;
+  const ids = new Set(cur.map((i) => i.id));
+  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, open: true, ticked: !!(old?.open && old.ticked) }; });
+  for (const it of Object.values(plan)) {
+    if (!ids.has(it.id) && it.open) { it.open = false; it.doneAt = now; }
+    if (!it.open && now - it.doneAt > 7 * 864e5) delete plan[it.id];
+  }
+  savePlan(); planReady = true;
+}
+function drawPlan() {
+  const el = $("#plan");
+  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${doneCount} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
+  const all = Object.values(plan), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
+  const left = open.filter((i) => !i.ticked).length;
+  const button = (i) => !i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
+    : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
+    : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`;
+  const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}><b>${esc(i.key)}</b>: ${i.what}</label>
+    <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Ticked by you. It's still in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
+  el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} of ${open.length} still to do` : "All done"}${done.length ? ` · ${done.length} fixed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear fixed</button>` : ""}</div>
+    ${open.length || done.length ? `<ol>${(planAll ? [...open, ...done] : [...open.slice(0, PLAN_SHOW), ...done.filter((i) => Date.now() - i.doneAt < 36e5)]).map(row).join("")}</ol>${open.length > PLAN_SHOW || done.length ? `<button class="ibtn" data-plan-all>${planAll ? "Show fewer" : `Show all ${open.length} to do${done.length ? ` and ${done.length} fixed` : ""}`}</button>` : ""}` : `<div class="ok" style="margin-top:6px">&#10003; Nothing to do. Every project is up to date.</div>`}</div>`;
+}
+$("#plan").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; savePlan(); drawPlan(); } });
+$("#plan").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-clear],[data-plan-all]");
+  if (!t) return;
+  if (t.dataset.planAll !== undefined) { planAll = !planAll; drawPlan(); }
+  else if (t.dataset.planGit) gitAction(t.dataset.key, t.dataset.planGit);
+  else if (t.dataset.planOpen) openProject(t.dataset.planOpen, t.dataset.jump || undefined);
+  else { for (const it of Object.values(plan)) if (!it.open) delete plan[it.id]; savePlan(); drawPlan(); }
+});
+
 function fullView(p) {
   const [label, cls] = status(p), job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
   return `<div class="fbar">
@@ -507,6 +619,7 @@ $("#full").addEventListener("click", (e) => {
 document.addEventListener("fullscreenchange", () => { if (tab !== "overview") render(); });
 
 function projectView(p) {
+  if (p.loading) return `<div class="empty">This project's data is still loading. It appears here by itself.</div>`;
   if (p.error) return `<div class="empty bad">${esc(folderProblem(p)[0])}<br><b>What to do:</b> ${esc(folderProblem(p)[1])}<div class="meta">${esc(p.error)}</div></div>`;
   const g = p.git, r = p.remote;
   const sync =!g.upstream ? "No upstream branch" : `${g.ahead} ahead / ${g.behind} behind ${esc(g.upstream)}`;
@@ -538,6 +651,7 @@ function render() {
   if (focus >= 0) full.querySelectorAll("textarea")[focus]?.focus();
 }
 cards(); tabs(); render();
+if (live) poll().then(watchBuild); else { updatePlan(); drawPlan(); } // a file copy shows the data it was saved with
 </script>
 </body>
 </html>
