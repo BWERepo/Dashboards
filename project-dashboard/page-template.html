@@ -41,6 +41,8 @@ textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid v
 #auto{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);margin-left:8px}
 .rbtn:disabled{opacity:.6;cursor:wait}
 .ibtn:disabled{opacity:.45;cursor:not-allowed}
+.gitsel{font:inherit;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer}
+.gitsel:disabled{opacity:.6;cursor:wait}
 details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:6px 0}
 summary{cursor:pointer;font-weight:600}
 pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 2px}
@@ -175,26 +177,28 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { const b = e.target.closest("[data-git]"); if (b) { gitAction(b); return; } const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
+$("#cards").onclick = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open); };
+$("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; gitAction(s.dataset.key, act); } };
 $("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
-// Commit, Push and Commit & push on every card; a button is greyed out (with the reason on hover) when it has nothing to do.
+// A Git dropdown on every card: Commit, Push, Commit & push. A choice with nothing to do is greyed out with the reason.
 // Push is a plain `git push` to the upstream, never a force push, so it is off when the branch is behind or has diverged.
 // State lives here, not in the DOM, because cards() redraws every few seconds.
 const gitBusy = {}, gitNote = {};
 function gitButtons(p, c) {
-  const pushBlock = diverged(p) ? "Local and remote have diverged. Pull and merge first." : p.git.behind ? "The remote has newer commits. Pull first." : "";
-  const btn = (act, label, why) => `<button class="${why ? "ibtn" : "rbtn"}" style="margin:0" data-git="${act}" data-key="${esc(p.key)}" ${why || gitBusy[p.key] ? "disabled" : ""} ${why ? `title="${esc(why)}"` : ""}>${label}</button>`;
+  const pushBlock = diverged(p) ? "diverged, pull and merge first" : p.git.behind ? "remote is ahead, pull first" : "";
+  const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
   const note = gitNote[p.key];
-  return `<div class="tools" style="margin:10px 0 0">
-    ${btn("commit", "Commit", c.uncommitted ? "" : "Nothing to commit")}
-    ${btn("push", "Push", pushBlock || (c.unpushed ? "" : "Nothing to push"))}
-    ${btn("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "Nothing to commit"))}
-  </div>${note ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+  return `<div class="tools" style="margin:10px 0 0"><select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
+    <option value="">Git...</option>
+    ${opt("commit", "Commit", c.uncommitted ? "" : "nothing to commit")}
+    ${opt("push", "Push", pushBlock || (c.unpushed ? "" : "nothing to push"))}
+    ${opt("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "nothing to commit"))}
+  </select></div>${note ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
 }
-async function gitAction(btn) {
-  const p = DATA.projects.find((x) => x.key === btn.dataset.key), act = btn.dataset.git, g = p.git;
-  const say = (text, bad) => { gitNote[p.key] = { text, bad }; cards(); };
+async function gitAction(key, act) {
+  const p = DATA.projects.find((x) => x.key === key), g = p.git;
+  const say = (text, bad) => { gitNote[p.key] = { text, bad }; if (!document.activeElement?.matches?.("#cards select")) cards(); };
   const files = g.files.map((f) => `${f.kind}: ${f.path}`), list = (a) => a.slice(0, 15).join("\n") + (a.length > 15 ? `\n...and ${a.length - 15} more` : "");
   let message = "";
   if (act !== "push") {
@@ -270,7 +274,7 @@ async function poll() {
     const changed = sig(next) !== sig(JOBS);
     JOBS = next;
     if (finished) { setTimeout(() => location.reload(), 4000); return; } // the server is rebuilding the data
-    cards();
+    if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
     if (changed && tab !== "overview") { render(); return; }
     // Same state: refresh only the log and clock so a half-typed reply is not wiped.
     const log = $("#joblog"), b = $("#jobbadge");
