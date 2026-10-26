@@ -88,6 +88,10 @@ body.locked{overflow:hidden}
 .filters button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:2px 9px;border-radius:99px;cursor:pointer}
 .filters button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
 .note{font-size:12px;color:var(--mute)}
+.focus{max-width:900px;margin:0 auto}
+.fitem{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
+.ftitle{font-weight:650;font-size:16px}.fabout{margin:6px 0;white-space:pre-wrap;word-break:break-word;color:var(--mute)}
+.fnext{margin-top:6px;padding:6px 10px;border-left:3px solid var(--accent);background:var(--chip);border-radius:6px}
 .working{display:flex;gap:12px;align-items:flex-start;border:2px solid var(--accent);border-radius:10px;background:var(--card);margin:12px 16px 0;padding:12px 14px}
 .spin{flex:none;width:18px;height:18px;margin-top:2px;border:3px solid var(--chip);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -139,7 +143,8 @@ async function refresh(manual) {
     if (onServer) location.reload(); else location.href = SERVER; // a file copy moves to the live page
   } catch (err) {
     b.disabled = false; b.textContent = "Refresh now";
-    $("#stamp").textContent = location.protocol === "http:" ? "Refresh failed: " + err.message : "The local server is not running. Double-click refresh.cmd, then try again.";
+    // "Failed to fetch" means nothing answered at all: the dashboard server has stopped, not that a refresh went wrong.
+    $("#stamp").textContent = location.protocol === "http:" && !/failed to fetch|networkerror/i.test(err.message) ? "Refresh failed: " + err.message : "The dashboard server isn't running. Double-click refresh.cmd in the project-dashboard folder, then try again.";
   }
 }
 $("#refresh").onclick = () => refresh(true);
@@ -239,16 +244,41 @@ async function gitAction(key, act) {
 // Selecting a project opens it over the whole window and asks the browser for real full screen too.
 // A count on a card (Issues, Open PRs, To commit, To push) opens the project's Details at that list, expanded.
 let openIssues = false; // kept in state: entering full screen redraws the view
+// A count on a card (Issues, Open PRs, To commit, To push) opens just that list, each item with its next step.
+let focusKind = "";
 function openProject(k, jump) {
-  tab = k; view = jump ? "details" : "messages"; openIssues = jump === "issues";
+  tab = k; view = jump ? "focus" : "messages"; focusKind = jump || "";
   history.replaceState(null, "", k === "overview" ? location.pathname : "#p=" + encodeURIComponent(k));
   if (k !== "overview" && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   tabs(); render();
-  const sec = jump && document.getElementById("sec-" + jump);
-  if (sec) {
-    sec.scrollIntoView({ block: "start" });
-    sec.classList.add("flash"); setTimeout(() => sec.classList.remove("flash"), 1500);
+}
+function focusView(p) {
+  const g = p.git, r = p.remote, full = (n) => (r.activity || []).find((i) => (i.type === "pr" || i.type === "issue") && i.number === n);
+  const gh = (url, label) => `<a class="rbtn" style="margin:0;text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>`;
+  const card = (title, meta, about, next, button) => `<div class="fitem"><div class="ftitle">${title}</div>${meta ? `<div class="meta">${meta}</div>` : ""}${about ? `<div class="fabout">${md(about)}</div>` : ""}<div class="fnext"><b>Next step:</b> ${next}</div>${button ? `<div style="margin-top:8px">${button}</div>` : ""}</div>`;
+  const short = (t) => { t = String(t || "").replace(/<!--[\s\S]*?-->/g, "").trim(); return t.length > 280 ? t.slice(0, 280) + " …" : t; };
+  let head = "", body = "";
+  if (focusKind === "prs") {
+    head = `Open pull requests (${r.prs.length})`;
+    body = r.prs.map((x) => { const f = full(x.number); return card(`#${x.number} ${esc(x.title)}${x.isDraft ? ` <span class="pill">draft</span>` : ""}`,
+      `${esc(f?.author || "")}${f?.created ? " · opened " + fmt(f.created) : ""} · updated ${ago(x.updatedAt)}`, short(f?.body),
+      x.isDraft ? "It's a draft, so it's still being worked on. Nothing to do yet." : "Open it on GitHub, check the changes, then press <b>Merge</b> if it looks right, or <b>Close</b> it if it's no longer needed.",
+      gh(x.url, "Open on GitHub")); }).join("") || `<div class="empty">No open pull requests. Nothing to do.</div>`;
+  } else if (focusKind === "issues") {
+    head = `Open issues (${r.issues.length})`;
+    body = r.issues.map((i) => card(`#${i.number} ${esc(i.title)}`, `updated ${ago(i.updatedAt)}${i.labels.length ? " · " + i.labels.map(esc).join(", ") : ""}`, short(i.body),
+      "Read it on GitHub. If it still matters, ask Claude in this project to fix it; if not, close it.", gh(i.url, "Open on GitHub"))).join("") || `<div class="empty">No open issues. Nothing to do.</div>`;
+  } else if (focusKind === "commit") {
+    head = `Changed files not committed (${g?.files.length || 0})`;
+    body = g?.files.length ? card(`${g.files.length} file(s)`, "", g.files.slice(0, 30).map((f) => `- \`${f.path}\` (${f.kind})`).join("\n") + (g.files.length > 30 ? `\n- and ${g.files.length - 30} more` : ""),
+      "Close this view and pick <b>Commit</b> (or <b>Commit &amp; push</b>) in the card's Git dropdown.", "") : `<div class="empty">Nothing to commit.</div>`;
+  } else {
+    const div = diverged(p);
+    head = div ? `Diverged: ${g.ahead} commit(s) only here, ${g.behind} only on GitHub` : `Commits not pushed (${g?.unpushed.length || 0})`;
+    body = g?.unpushed.length || g?.behind ? card(div ? "Your local commits" : `${g.unpushed.length} commit(s)`, "", g.unpushed.map((c) => `- ${c.slice(8)}`).join("\n"),
+      div ? "Close this view and pick <b>Fix diverged</b> in the card's Git dropdown." : g.behind ? "Close this view and pick <b>Pull</b> in the card's Git dropdown." : "Close this view and pick <b>Push</b> in the card's Git dropdown.", "") : `<div class="empty">Nothing to push.</div>`;
   }
+  return `<div class="focus"><div class="tools" style="justify-content:space-between"><h3 style="margin:0">${head}</h3><button class="ibtn" data-view="messages">Show all messages</button></div>${body}</div>`;
 }
 function closeProject() {
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -454,9 +484,8 @@ function fullView(p) {
       <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
       <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>
     </div>
-    ${attention(p)}
-    ${needPanel(p)}
-    <div class="fbody">${view === "details" ? projectView(p) : `<div class="cols">
+    ${view === "focus" ? "" : attention(p) + needPanel(p)}
+    <div class="fbody">${view === "focus" ? focusView(p) : view === "details" ? projectView(p) : `<div class="cols">
       <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span> <span class="filters"><button data-act="tools" aria-pressed="${showTools}">Show tool steps</button></span></h3><div class="colbody">${claudeCol(p)}</div></section>
       <section class="col" aria-label="GitHub messages"><h3>GitHub messages <span class="filters">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</span></h3><div class="colbody">${ghCol(p)}</div></section>
     </div>`}</div>`;
