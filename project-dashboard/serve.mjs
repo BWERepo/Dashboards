@@ -182,6 +182,9 @@ const server = createServer(async (req, res) => {
   const key = req.method === "POST" && req.url.startsWith("/checkpoint/") ? decodeURIComponent(req.url.slice(12)) : "";
   if (byKey(key)?.cmd) {
     if (jobs[key]?.status === "running") { fail(res, 409, "A checkpoint is already running for this project.", "Wait for it to finish; the card shows a clock while it runs."); return; }
+    let cb = {}; try { cb = JSON.parse(await readBody(req)); } catch {}
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
+    if (cb.confirmed !== true) { fail(res, 400, "The checkpoint deploys production, and it was not confirmed, so nothing was started.", "Use the Checkpoint button on the dashboard and confirm in the dialog."); return; } // standing rule: production deploys are always confirmed
     runClaude(key, byKey(key).cmd, { kind: "checkpoint" });
     res.writeHead(200, cors).end("started");
     return;
@@ -233,6 +236,8 @@ const server = createServer(async (req, res) => {
     const pick = { staging: (n) => /staging/i.test(n) && !/end-to-end|e2e/i.test(n), production: (n) => /production/i.test(n) && !/end-to-end|e2e/i.test(n), e2e: (n) => /end-to-end|e2e/i.test(n) }[stage];
     const label = { staging: "Staging", production: "Production", e2e: "End-to-End" }[stage];
     if (!pick) { fail(res, 400, "The dashboard sent an unknown deployment type.", "Click Refresh now and try again."); return; }
+    // Standing rule: anything that deploys production (Production, End-to-End) only runs after the person confirmed it in the page.
+    if (stage !== "staging" && body.confirmed !== true) { fail(res, 400, `The ${label} deployment was not confirmed, so nothing was started.`, "Use the Deployments menu on the dashboard and confirm in the dialog."); return; }
     const ghx = (...a) => new Promise((resolve, reject) => execFile("gh", a, { windowsHide: true, timeout: 60000 }, (err, out, errOut) => (err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out.trim()))));
     try {
       const wfs = JSON.parse(await ghx("workflow", "list", "-R", repo, "--json", "id,name,state"));
