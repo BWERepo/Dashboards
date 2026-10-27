@@ -294,7 +294,7 @@ function cards() {
       ${lastBlock(p)}
       ${planBlock(p)}
       ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
-      ${p.git && (!planReady || needsYou(p) || gitBusy[p.key] || gitNote[p.key]?.text) ? gitButtons(p, c) : ""}
+      ${p.git ? gitButtons(p, c, !!(!planReady || needsYou(p) || gitBusy[p.key])) : ""}
     </div>`;
   }).join("");
 }
@@ -313,18 +313,18 @@ $("#cards").onkeydown = (e) => { if (e.target.closest("[data-git],[data-noopen]"
 // Push is a plain `git push` to the upstream, never a force push, so it is off when the branch is behind or has diverged.
 // State lives here, not in the DOM, because cards() redraws every few seconds.
 const gitBusy = {}, gitNote = {};
-function gitButtons(p, c) {
+function gitButtons(p, c, showSelect = true) { // the dropdown is left out when nothing needs you; a result message still shows
   const pushBlock = diverged(p) ? "diverged" : p.git.behind ? "pull first" : "";
   const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
   const note = gitNote[p.key];
-  return `<div style="margin:10px 0 0"><select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
+  return `${showSelect ? `<div style="margin:10px 0 0"><select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
     <option value="">Git...</option>
     ${opt("commit", "Commit", c.uncommitted ? "" : "none")}
     ${opt("push", "Push", pushBlock || (c.unpushed ? "" : "none"))}
     ${opt("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "none"))}
     ${opt("pull", "Pull", !p.git.upstream ? "no remote" : !p.git.behind ? "up to date" : c.uncommitted ? "commit first" : "")}
     ${opt("sync", "Fix diverged", !p.git.upstream ? "no remote" : !(p.git.behind && p.git.ahead) ? "not diverged" : c.uncommitted ? "commit first" : "")}
-  </select></div>${note?.text ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+  </select></div>` : ""}${note?.text ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
 }
 async function gitAction(key, act) {
   const p = DATA.projects.find((x) => x.key === key), g = p.git;
