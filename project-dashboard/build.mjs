@@ -65,17 +65,31 @@ async function remote({ repo }) {
   if (!repo) return { url: null, issues: [], prs: [], activity: [] };
   const r = `${OWNER}/${repo}`;
   const json = (...args) => attempt(async () => JSON.parse(await gh(...args)), []);
-  const [issues, prs, act] = await Promise.all([
+  const [issues, prs, act, runs] = await Promise.all([
     json("issue", "list", "-R", r, "--state", "open", "-L", "50", "--json", "number,title,url,updatedAt,body,labels"),
     json("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt"),
     activity(r, json),
+    json("run", "list", "-R", r, "-L", "60", "--json", "displayTitle,workflowName,status,conclusion,createdAt,url,headBranch"),
   ]);
   return {
     url: `https://github.com/${r}`,
     issues: issues.map((i) => ({ number: i.number, title: i.title, url: i.url, updatedAt: i.updatedAt, labels: i.labels.map((l) => l.name), body: (i.body || "").slice(0, 4000) })),
     prs,
     activity: act,
+    deploys: deploys(runs),
   };
+}
+
+// The newest run of each deploy workflow ("Deploy to Staging", "Deploy to Production", "Deploy End-to-End"...), so the
+// dashboard can say what is deployed where. state is the run's conclusion, or its status while it is still running.
+function deploys(runs) {
+  const seen = new Map();
+  for (const w of runs || []) {
+    if (!/deploy/i.test(w.workflowName) || seen.has(w.workflowName)) continue; // runs come newest first
+    seen.set(w.workflowName, { workflow: w.workflowName, stage: /production/i.test(w.workflowName) ? "production" : /staging/i.test(w.workflowName) ? "staging" : "other",
+      state: w.conclusion || w.status, at: w.createdAt, url: w.url, title: w.displayTitle, branch: w.headBranch });
+  }
+  return [...seen.values()];
 }
 
 // One timeline of GitHub messages: issues and PRs (opened or updated), their comments, commits and Actions runs.
