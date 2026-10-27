@@ -132,6 +132,8 @@ async function collectSite({ repo, name }) {
   if (runs === null) return site;
   site.setUp = true;
   site.lastRun = runs[0] || null;
+  // The daily workflow's schedule (GitHub cron is always UTC); the page turns it into the browser's local time.
+  site.cron = ((await raw(repo, ".github/workflows/search-monitor-daily.yml").catch(() => "")).match(/cron:\s*["']?([^"'\n#]+?)["']?\s*(?:#.*)?$/m) || [])[1] || "";
   const tree = await tryJson(() => gh(["api", `repos/${OWNER}/${repo}/git/trees/${BRANCH}?recursive=1`, "-q", "[.tree[].path]"]));
   if (!tree) return site;
   const reports = tree.filter((p) => /^reports\/(daily|weekly)-[\d-]+\.md$/.test(p)).sort().reverse().slice(0, 30);
