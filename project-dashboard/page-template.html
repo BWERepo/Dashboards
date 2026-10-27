@@ -916,6 +916,10 @@ function drawLists() {
   const run = (x) => !x ? `<span class="meta">never run</span>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="${x.state === "success" ? "ok" : x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure" ? "bad" : "warn"}">${x.state === "success" ? "&#10003; Succeeded" : x.state === "failure" ? "&#10007; Failed" : esc(String(x.state).replace(/_/g, " "))}</a> <span class="meta">${fmt(x.at)}${/end-to-end|e2e/i.test(x.workflow) ? " · End-to-End" : ""}</span>`;
   const dep = DATA.projects.filter((x) => !x.loading && (x.group === "websites" || x.key === "BWE_Dashboard")).map((x) => { // the other utilities are not deployed, so they are not listed
     const d = x.remote.deploys || [], by = (s) => stageRun(d, s);
+    if (x.key === "BWE_Dashboard") { // deployed by update.cmd from the last push, so that push is its succeeded deployment
+      const c = (x.remote.activity || []).find((i) => i.type === "commit"), cell = c ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" class="ok">&#10003; Succeeded</a> <span class="meta">${fmt(c.at)} · update.cmd</span>` : `<span class="meta">never pushed</span>`;
+      return `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td><td>${cell}</td><td>${cell}</td></tr>`;
+    }
     return `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td>${d.length ? `<td>${run(by("staging"))}</td><td>${run(by("production"))}</td>` : `<td colspan="2" class="meta">${x.key === "BWE_Dashboard" ? (() => { const c = (x.remote.activity || []).find((i) => i.type === "commit"); return `Deployed with update.cmd from the last push: <b>${c ? fmt(c.at) : "never pushed"}</b>`; })() : "No deploy workflow found"}</td>`}</tr>`;
   }).join("");
   // PRs: the recent pull requests of every project (any state), newest first, each with what you need to do about it.
