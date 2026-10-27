@@ -48,7 +48,7 @@ function runBuild() {
   });
 }
 // The page is always served fresh from the template with every card "loading"; the data then arrives from /progress.
-// (index.html, written by build.mjs, is only the saved copy, so an old one can never show an old dashboard.)
+// (The copy build.mjs saves in the temp folder is not served, so an old one can never show an old dashboard.)
 const blankPage = () => readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify({ generatedAt: null,
   projects: PROJECTS.map((p) => ({ key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null, group: p.group, loading: true, remote: { url: null, issues: [], prs: [], activity: [] }, sessions: [] })) }).replace(/</g, "\\u003c"));
 
