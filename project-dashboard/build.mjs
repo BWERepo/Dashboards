@@ -1,10 +1,11 @@
-// Builds project-dashboard/index.html: status, outstanding issues, items to commit, recent GitHub activity
+// Collects the dashboard data (and saves a copy of the page in the temp folder): status, outstanding issues, items to commit, recent GitHub activity
 // and recent Claude Code sessions for each project in projects.mjs. Read-only (git + gh + local transcripts).
 // Projects are collected in parallel (a few at a time, in list order). Each finished project is printed as one
 // "@@project <json>" line, so serve.mjs can hand it to the page straight away, before the whole build is done.
 // Usage: node project-dashboard/build.mjs [--open]
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -154,7 +155,9 @@ const data = { generatedAt: new Date().toISOString(), projects: results, search 
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify(data).replace(/</g, "\\u003c"));
-const outFile = join(here, "index.html");
+// A saved copy of the page. It goes in the temp folder, not here: this folder is a git repository, and a file rewritten on
+// every refresh would make the project look uncommitted again right after each commit.
+const outFile = join(tmpdir(), "bwe-dashboard.html");
 writeFileSync(outFile, html, "utf8");
 console.log(`Wrote ${outFile}`);
 for (const p of data.projects) console.log(`${p.key}: ${p.git ? `${p.git.files.length} uncommitted, ${p.git.unpushed.length} unpushed` : p.error}; ${p.remote.issues.length} issues, ${p.remote.prs.length} PRs, ${p.remote.activity.length} GitHub events, ${p.sessions.length} Claude sessions`);
