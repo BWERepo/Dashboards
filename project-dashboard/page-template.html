@@ -822,7 +822,7 @@ function drawLists() {
   };
   // Deployment: each project's newest staging and production run, with when it ran and whether it worked.
   const run = (x) => !x ? `<span class="meta">never run</span>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="${x.state === "success" ? "ok" : x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure" ? "bad" : "warn"}">${x.state === "success" ? "&#10003; Succeeded" : x.state === "failure" ? "&#10007; Failed" : esc(String(x.state).replace(/_/g, " "))}</a> <span class="meta">${fmt(x.at)}${/end-to-end|e2e/i.test(x.workflow) ? " · End-to-End" : ""}</span>`;
-  const dep = DATA.projects.filter((x) => !x.loading).map((x) => {
+  const dep = DATA.projects.filter((x) => !x.loading && x.group === "websites").map((x) => { // utilities are not deployed, so they are not listed
     const d = x.remote.deploys || [], by = (s) => stageRun(d, s);
     return `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td>${d.length ? `<td>${run(by("staging"))}</td><td>${run(by("production"))}</td>` : `<td colspan="2" class="meta">No deploy workflow found</td>`}</tr>`;
   }).join("");
