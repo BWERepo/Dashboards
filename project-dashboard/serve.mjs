@@ -117,6 +117,18 @@ const git = (dir, ...args) => new Promise((resolve, reject) => execFile("git", [
   { windowsHide: true, timeout: 180000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }, (err, out, errOut) =>
   err ? reject(new Error(err.killed ? `git ${args[0]} took over 3 minutes and was stopped. Try it in a terminal to see if it is waiting for a login.` : String(errOut || out || err.message).trim()))
     : resolve(String(out + errOut).trim())));
+// A missing or broken "origin" remote ("'origin' does not appear to be a git repository") is repaired from the project's
+// repo name, then the command is tried once more.
+const BAD_ORIGIN = /does not appear to be a git repository|No such remote|Could not read from remote repository/i;
+async function withOrigin(dir, proj, fn) {
+  try { return await fn(); }
+  catch (e) {
+    if (!proj?.repo || !BAD_ORIGIN.test(e.message)) throw e;
+    const url = `https://github.com/${OWNER}/${proj.repo}.git`;
+    await git(dir, "remote", "set-url", "origin", url).catch(() => git(dir, "remote", "add", "origin", url));
+    return fn();
+  }
+}
 const SECRETISH = /(^|\/)(\.env(\..*)?|\.dev\.vars|id_rsa.*|.*\.(pem|key|p12|pfx)|credentials.*|secrets?\.(json|ya?ml|txt))$/i;
 // Every error the page shows says what went wrong and what to do about it: "<problem>\nWhat to do: <fix>".
 // (Function declarations, so the saved-jobs loader near the top can use them.)
@@ -132,6 +144,7 @@ function explainGit(msg, dir) {
   if (/could not resolve host|unable to access|timed out|connection/i.test(m)) return problem("This PC couldn't reach GitHub.", "Check the internet connection, then try again.", m);
   if (/index\.lock|another git process/i.test(m)) return problem("Another program is using git in this folder right now.", `Wait for it to finish (or close it), then try again. If nothing is running, delete ${dir}\\.git\\index.lock and try again.`, m);
   if (/tell me who you are|user\.email/i.test(m)) return problem("Git doesn't know your name and email, so it can't commit.", 'In PowerShell run: git config --global user.name "Your Name" and git config --global user.email you@example.com, then try again.', m);
+  if (BAD_ORIGIN.test(m)) return problem("This folder's link to GitHub (the \"origin\" remote) is missing or wrong.", `Open PowerShell in ${dir}, run git remote -v to see it, and git remote set-url origin <the repo's GitHub URL> to fix it, then try again.`, m);
   if (/no upstream|no tracking information/i.test(m)) return problem("This branch isn't linked to a branch on GitHub.", "Pick Push once to create it on GitHub, then try again.", m);
   return problem("Git reported an error.", "Read the details below. If they don't make sense, send a screenshot of this message to Claude.", m);
 }
@@ -273,7 +286,7 @@ const server = createServer(async (req, res) => {
       // conflict the rebase is undone, so the folder is left exactly as it was.
       if (act === "pull" || act === "sync") {
         if ((await changedFiles()).length) throw new Error(problem("This folder has changes that aren't committed, so pulling could mix them up.", "Pick Commit in the Git dropdown first, then try again."));
-        try { out.push(await git(dir, "pull", "--rebase")); }
+        try { out.push(await withOrigin(dir, byKey(gk2), () => git(dir, "pull", "--rebase"))); }
         catch (e) {
           await git(dir, "rebase", "--abort").catch(() => {});
           if (!/conflict|could not apply/i.test(e.message)) throw new Error(explainGit(e.message, dir));
@@ -291,7 +304,7 @@ const server = createServer(async (req, res) => {
       }
       if (act === "push" || act === "both" || act === "sync") {
         const upstream = await git(dir, "rev-parse", "--abbrev-ref", "@{u}").catch(() => "");
-        out.push(upstream ? await git(dir, "push") : await git(dir, "push", "-u", "origin", "HEAD"));
+        out.push(await withOrigin(dir, byKey(gk2), () => upstream ? git(dir, "push") : git(dir, "push", "-u", "origin", "HEAD")));
       }
       res.writeHead(200, cors).end(out.join("\n").trim() || "done"); // the page asks for the rebuild, so it can show that step
     } catch (e) { res.writeHead(500, cors).end(/\nWhat to do: /.test(e.message) ? e.message : explainGit(e.message, dir)); }
