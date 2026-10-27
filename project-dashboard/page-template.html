@@ -358,7 +358,7 @@ async function deployAction(key, stage) {
   if (!live) { say("This page was opened as a file, so it can't start deployments.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).", true); return; }
   say(`Starting the ${label} deployment...`); gitBusy[key] = true; cards();
   try {
-    const r = await fetch("/deploy/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ stage }) });
+    const r = await fetch("/deploy/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ stage, confirmed: true }) }); // only reached after the confirm() dialog above
     if (!r.ok) throw new Error(await r.text());
     gitBusy[key] = false;
     say(`\u2713 The ${label} deployment was started on GitHub at ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}. The card updates when it has run.`);
@@ -591,7 +591,7 @@ async function checkpoint(key) {
   const msg = $("#cpmsg");
   if (!confirm(`Run ${CMDS[key]} for ${key}?\n\nThis builds, deploys staging and production, then commits and pushes. It runs in the background with no window; a clock shows until it finishes.`)) return;
   try {
-    const r = await fetch(SERVER + "/checkpoint/" + key, { method: "POST" });
+    const r = await fetch(SERVER + "/checkpoint/" + key, { method: "POST", body: JSON.stringify({ confirmed: true }) });
     if (!r.ok) throw new Error(await r.text());
     if (!live) { location.href = SERVER + "/#p=" + encodeURIComponent(key); return; }
     await poll(); render();
