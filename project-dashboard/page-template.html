@@ -359,7 +359,7 @@ function focusView(p) {
   } else if (focusKind === "issues") {
     head = `Open issues (${r.issues.length})`;
     body = r.issues.map((i) => card(`#${i.number} ${esc(i.title)}`, `updated ${ago(i.updatedAt)}${i.labels.length ? " · " + i.labels.map(esc).join(", ") : ""}`, short(i.body),
-      "Read it on GitHub. If it still matters, ask Claude in this project to fix it; if not, close it.", gh(i.url, "Open on GitHub"))).join("") || `<div class="empty">No open issues. Nothing to do.</div>`;
+      "Read it on GitHub. If it still matters, ask Claude in this project to fix it; if not, close it.", gh(i.url, "Open on GitHub") + ` <button class="ibtn" data-close-issue="${i.number}" data-key="${esc(p.key)}">Close issue #${i.number}</button>`)).join("") || `<div class="empty">No open issues. Nothing to do.</div>`;
   } else if (focusKind === "commit") {
     head = `Changed files not committed (${g?.files.length || 0})`;
     body = g?.files.length ? card(`${g.files.length} file(s)`, "", g.files.slice(0, 30).map((f) => `- \`${f.path}\` (${f.kind})`).join("\n") + (g.files.length > 30 ? `\n- and ${g.files.length - 30} more` : ""),
@@ -593,7 +593,7 @@ function todo(p) {
   }
   for (const i of openFailures(p).slice(0, 3)) add(1, "bad", "run|" + i.title.split(": ")[0], `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why, then ask Claude in this project to fix it.", { label: "See why", url: i.url });
   for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft, { number: x.number });
-  for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" });
+  for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" }, true, { number: i.number, issue: true });
   return items.sort((a, b) => a.pri - b.pri);
 }
 // The short answer to "what needs me here?" at the top of a project.
@@ -626,7 +626,7 @@ function drawPlan() {
   if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${Math.min(doneCount, DATA.projects.length)} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
   const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
   const left = open.filter((i) => !i.ticked).length;
-  const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" data-close-pr="${i.btn2.number}" data-key="${esc(i.key)}">Close PR</button>` : "";
+  const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
   const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
@@ -783,19 +783,20 @@ function groupsNav() {
   const n = (g) => g === "google" ? (SITES().reduce((a, s) => a + (s.daily[0]?.open || 0), 0)) : planReady ? open(g) : 0;
   $("#groups").innerHTML = GROUPS.map(([k, name]) => `<button aria-pressed="${group === k}" data-g="${k}">${name}${n(k) ? `<span class="gn" title="${k === "google" ? "Open search findings" : "Actions waiting"}">${n(k)}</span>` : ""}</button>`).join("");
 }
-// Close a pull request on GitHub (never merges it, and leaves its branch). Asks first.
+// Close a pull request (never merged; its branch is kept) or an issue on GitHub. Asks first.
 document.addEventListener("click", async (e) => {
-  const b = e.target.closest("[data-close-pr]"); if (!b) return;
-  const n = b.dataset.closePr, key = b.dataset.key, pr = DATA.projects.find((x) => x.key === key)?.remote.prs.find((x) => String(x.number) === n);
-  if (!confirm(`Close pull request #${n}${pr ? ` "${pr.title}"` : ""} in ${key} on GitHub?\n\nIt is closed without merging. Its changes are not used, and its branch is kept.`)) return;
-  if (!live) { alert("This page was opened as a file, so it can't close pull requests.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788)."); return; }
-  b.disabled = true; b.textContent = "Closing...";
+  const b = e.target.closest("[data-close-pr],[data-close-issue]"); if (!b) return;
+  const issue = b.dataset.closeIssue !== undefined, n = issue ? b.dataset.closeIssue : b.dataset.closePr, key = b.dataset.key, noun = issue ? "issue" : "pull request";
+  const r0 = DATA.projects.find((x) => x.key === key)?.remote, item = (issue ? r0?.issues : r0?.prs)?.find((x) => String(x.number) === n);
+  if (!confirm(`Close ${noun} #${n}${item ? ` "${item.title}"` : ""} in ${key} on GitHub?\n\n${issue ? "It is marked closed on GitHub. You can reopen it there." : "It is closed without merging. Its changes are not used, and its branch is kept."}`)) return;
+  if (!live) { alert(`This page was opened as a file, so it can't close a ${noun}.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).`); return; }
+  const label = b.textContent; b.disabled = true; b.textContent = "Closing...";
   try {
-    const r = await fetch("/gh-close/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ number: Number(n) }) });
+    const r = await fetch("/gh-close/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ number: Number(n), kind: issue ? "issue" : "pr" }) });
     if (!r.ok) throw new Error(await r.text());
-    refresh(); // the list is rebuilt from GitHub, so the closed PR drops out and its action is ticked as Fixed
+    refresh(); // the lists are rebuilt from GitHub, so the closed item drops out and its action is ticked as Fixed
   } catch (err) {
-    b.disabled = false; b.textContent = "Close PR";
+    b.disabled = false; b.textContent = label;
     alert(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? offline : err.message + "\nWhat to do: try again. If it keeps failing, send a screenshot of this message to Claude.");
   }
 });

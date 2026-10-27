@@ -211,18 +211,18 @@ const server = createServer(async (req, res) => {
     child.stdin.end(text);
     return;
   }
-  // Close an open pull request without merging it (the branch is left alone). Asked for by the user's button press.
+  // Close an open pull request (without merging it; the branch is left alone) or an issue. Asked for by the user's button press.
   const ck = req.method === "POST" && req.url.startsWith("/gh-close/") ? decodeURIComponent(req.url.slice(10)) : "";
   if (byKey(ck)?.repo) {
     if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
     let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
-    const num = Number(body.number);
-    if (!Number.isInteger(num) || num < 1) { fail(res, 400, "The dashboard didn't say which pull request to close.", "Click Refresh now and try again."); return; }
-    execFile("gh", ["pr", "close", String(num), "-R", `${OWNER}/${byKey(ck).repo}`], { windowsHide: true }, (err, out, errOut) => {
+    const num = Number(body.number), kind = body.kind === "issue" ? "issue" : "pr", noun = kind === "issue" ? "issue" : "pull request";
+    if (!Number.isInteger(num) || num < 1) { fail(res, 400, `The dashboard didn't say which ${noun} to close.`, "Click Refresh now and try again."); return; }
+    execFile("gh", [kind, "close", String(num), "-R", `${OWNER}/${byKey(ck).repo}`], { windowsHide: true }, (err, out, errOut) => {
       const m = String(errOut || err?.message || "");
       if (err && !/already closed/i.test(m)) {
-        if (/auth|login|401|403/i.test(m)) fail(res, 500, "GitHub didn't let the dashboard close the pull request because the gh tool isn't signed in.", "In PowerShell run: gh auth login, sign in, then try again.", m);
-        else fail(res, 500, "The pull request wasn't closed.", "Check the internet connection and try again. If it keeps failing, close it on GitHub with its Open on GitHub button.", m);
+        if (/auth|login|401|403/i.test(m)) fail(res, 500, `GitHub didn't let the dashboard close the ${noun} because the gh tool isn't signed in.`, "In PowerShell run: gh auth login, sign in, then try again.", m);
+        else fail(res, 500, `The ${noun} wasn't closed.`, "Check the internet connection and try again. If it keeps failing, close it on GitHub with its Open on GitHub button.", m);
         return;
       }
       res.writeHead(200, cors).end("closed");
