@@ -255,6 +255,7 @@ function status(p) {
   if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
   if (c.uncommitted || c.unpushed) return ["Needs commit", "warn"];
   if (p.git.behind) return ["Behind remote", "warn"];
+  if (openFailures(p).length) return ["Action failed", "bad"]; // a GitHub Actions workflow whose newest run failed
   if (c.issues || c.prs) return ["Open items", "warn"];
   return ["Clean", "ok"];
 }
@@ -626,18 +627,20 @@ function updatePlan() {
 function drawPlan() {
   const el = $("#plan");
   if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${Math.min(doneCount, DATA.projects.length)} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
-  const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
-  const left = open.filter((i) => !i.ticked).length;
+  const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open && !i.ticked).sort((a, b) => a.pri - b.pri || a.order - b.order),
+    // A ticked action is closed: it leaves the to-do list at once and waits under "Show all", with the fixed ones.
+    done = all.filter((i) => !i.open || i.ticked).sort((a, b) => (b.doneAt || b.tickedAt || 0) - (a.doneAt || a.tickedAt || 0));
+  const left = open.length;
   const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
   const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
   const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}><b>${esc(i.key)}</b>: ${i.what}</label>
-    <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Ticked by you. It's still in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
-  el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} of ${open.length} still to do` : "All done"}${done.length ? ` · ${done.length} fixed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear fixed</button>` : ""}</div>
-    ${open.length || done.length ? `<ol>${(planAll ? [...open, ...done] : [...open.slice(0, PLAN_SHOW), ...done.filter((i) => Date.now() - i.doneAt < 36e5)]).map(row).join("")}</ol>${open.length > PLAN_SHOW || done.length ? `<button class="ibtn" data-plan-all>${planAll ? "Show fewer" : `Show all ${open.length} to do${done.length ? ` and ${done.length} fixed` : ""}`}</button>` : ""}` : `<div class="ok" style="margin-top:6px">&#10003; Nothing to do. Every project is up to date.</div>`}</div>`;
+    <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Closed by you " + fmt(new Date(i.tickedAt || Date.now()).toISOString()) + ". It's still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
+  el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} still to do` : "All done"}${done.length ? ` · ${done.length} closed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear closed</button>` : ""}</div>
+    ${open.length || done.length ? `<ol>${(planAll ? [...open, ...done] : [...open.slice(0, PLAN_SHOW), ...done.filter((i) => !i.open && Date.now() - i.doneAt < 36e5)]).map(row).join("")}</ol>${open.length > PLAN_SHOW || done.length ? `<button class="ibtn" data-plan-all>${planAll ? "Show fewer" : `Show all ${open.length} to do${done.length ? ` and ${done.length} closed` : ""}`}</button>` : ""}` : `<div class="ok" style="margin-top:6px">&#10003; Nothing to do. Every project is up to date.</div>`}</div>`;
 }
-$("#plan").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; savePlan(); drawPlan(); } });
+$("#plan").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); savePlan(); drawPlan(); } });
 $("#plan").addEventListener("click", (e) => {
   const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-clear],[data-plan-all]");
   if (!t) return;
