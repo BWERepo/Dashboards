@@ -799,8 +799,9 @@ function releaseLists() {
     for (const x of d) if (!deploySuperseded(d, x) && (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure")) L.errors.push({ k, id: "err|" + k + "|" + x.workflow, sig: x.at, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
     const st = by("staging"), pr = by("production");
     // Needs staging = GitHub has a commit newer than the newest staging run (or staging never ran).
-    const commit = (p.remote.activity || []).find((i) => i.type === "commit");
-    if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, id: "stg|" + k, sig: commit.at + "|" + st.at, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
+    // Commits the deploy workflows make themselves (version bumps "released/deployed by GitHub Actions") are not new work.
+    const commit = (p.remote.activity || []).find((i) => i.type === "commit" && !/\[bot\]|github-actions/i.test(i.author || "") && !/by GitHub Actions\)?\s*$/i.test(i.title));
+    if (st && commit && !/in_progress|queued|waiting|pending/.test(st.state) && t(commit.at) > t(st.at)) L.staging.push({ k, id: "stg|" + k, sig: commit.at + "|" + st.at, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
     if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, id: "prod|" + k, sig: st.at + "|" + (pr?.at || ""), at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
   }
   return L;
