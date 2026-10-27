@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Status Dashboard</title>
+<title>BWE Dashboard</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#16191d;--mute:#5d6672;--line:#e1e5ea;--ok:#157347;--warn:#b26a00;--bad:#b3261e;--accent:#1a56db;--chip:#eef1f5}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--ink:#e8ebef;--mute:#98a2ae;--line:#2a3039;--ok:#4cc38a;--warn:#e0a03a;--bad:#f2766d;--accent:#7aa2ff;--chip:#222831}}
@@ -101,6 +101,10 @@ body.locked{overflow:hidden}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin.sm{display:inline-block;vertical-align:-2px;width:11px;height:11px;margin:0 2px 0 0;border-width:2px}
 .attn{margin:12px 16px 0;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+#groups{margin:6px 0 4px}#groups button{font-size:16px;padding:8px 22px}#groups .gn{margin-left:8px;font-size:12px;padding:0 7px;border-radius:99px;background:var(--chip);color:var(--ink)}#groups button[aria-pressed=true] .gn{background:#fff3;color:#fff}
+.spark{display:flex;align-items:flex-end;gap:3px;height:40px;margin-top:10px}.spark i{flex:1;min-width:4px;background:var(--accent);opacity:.75;border-radius:2px 2px 0 0}
+.stools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.stools input,.stools select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}.stools input{flex:1;min-width:200px}
+td.url{word-break:break-all}.tbl{overflow-x:auto}
 .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
 .plan ol{margin:8px 0 0;padding-left:22px}.plan li{margin:6px 0}.plan li label{cursor:pointer}.plan li .meta{margin-left:6px}.plan li .ibtn{margin-left:8px;padding:2px 10px;font-size:13px}
 .plan li.done label{text-decoration:line-through;color:var(--mute)}.plan input{margin:0 6px 0 0;vertical-align:-2px}
@@ -109,13 +113,21 @@ body.locked{overflow:hidden}
 </head>
 <body>
 <header>
-  <h1>Project Status Dashboard</h1>
+  <h1>BWE Dashboard</h1>
   <div class="sub" id="gen"></div>
 </header>
 <main>
+  <nav id="groups" aria-label="Dashboard sections"></nav>
+  <div id="gProjects">
   <div class="top"><div class="grid" id="cards"></div><section id="plan" aria-label="Recommended actions"></section></div>
   <nav id="tabs"></nav>
   <section id="detail"></section>
+  </div>
+  <div id="gGoogle" hidden>
+    <div class="grid" id="scards"></div>
+    <nav id="stabs"></nav>
+    <section id="sdetail"></section>
+  </div>
 </main>
 <div id="full" class="full" role="dialog" aria-modal="true" aria-labelledby="ftitle" hidden></div>
 <script>
@@ -133,6 +145,12 @@ const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", da
 const md = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
 // The open project is kept in the address (#p=KEY) so a reload comes back to it.
 let tab = (() => { const k = decodeURIComponent((location.hash.match(/^#p=(.+)$/) || [])[1] || ""); return DATA.projects.some((p) => p.key === k) ? k : "overview"; })();
+// The dashboard's sections: the project groups (Websites, Utilities) and Google (the search monitor).
+const GROUPS = [["websites", "Websites"], ["utilities", "Utilities"], ["google", "Google"]];
+const GROUP_KEY = "projdash-group";
+let group = (() => { const k = tab !== "overview" && DATA.projects.find((p) => p.key === tab)?.group; if (k) return k; try { const g = localStorage.getItem(GROUP_KEY); return GROUPS.some(([x]) => x === g) ? g : "websites"; } catch { return "websites"; } })();
+const inGroup = () => DATA.projects.filter((p) => p.group === group);
+const groupOf = (key) => DATA.projects.find((p) => p.key === key)?.group;
 let view = "messages", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
@@ -179,7 +197,7 @@ const waitFor = (key, run) => new Promise((resolve) => waiters.push({ key, run, 
 function redraw(keys) {
   if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
   $("#detail").innerHTML = overview();
-  drawPlan();
+  drawPlan(); groupsNav();
   if (tab !== "overview" && keys.includes(tab)) render();
 }
 function watchBuild() {
@@ -198,6 +216,7 @@ function watchBuild() {
         if (np.run === pr.run) fresh.add(np.key);
         for (const w of waiters.filter((w) => w.key === np.key && np.run >= w.run)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(); }
       }
+      if (pr.search) { DATA.search = pr.search; sRender(); groupsNav(); }
       building = pr.running || pr.queued; doneCount = pr.done;
       if (building) { stamp(`Updating... ${pr.done} of ${pr.total} projects loaded.`); if (keys.length || !planReady) redraw(keys); await sleep(1000); continue; }
       if (pr.generatedAt) DATA.generatedAt = pr.generatedAt;
@@ -238,7 +257,7 @@ function status(p) {
 }
 
 function cards() {
-  $("#cards").innerHTML = DATA.projects.map((p) => {
+  $("#cards").innerHTML = inGroup().map((p) => {
     const [label, cls] = status(p), c = counts(p);
     if (p.loading) return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Collecting git, GitHub and Claude data for this project.</div></div>`;
     const upd = building && !fresh.has(p.key) ? `<span class="pill"><span class="spin sm" aria-hidden="true"></span> Updating</span>` : "";
@@ -256,7 +275,7 @@ function cards() {
 }
 
 function tabs() {
-  const items = [["overview", "Overview"], ...DATA.projects.map((p) => [p.key, p.key])];
+  const items = [["overview", "Overview"], ...inGroup().map((p) => [p.key, p.key])];
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
@@ -367,8 +386,8 @@ function describe(p) {
   return (commits ? `<div class="meta">Commits</div><ul class="items">${commits}</ul>` : "") + (files ? `<div class="meta">Changed files</div><ul class="items">${files}</ul>` : "") || "-";
 }
 function overview() {
-  const commit = DATA.projects.filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
-  const issues = DATA.projects.flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
+  const commit = inGroup().filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
+  const issues = inGroup().flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
   return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>PR</th><th>Description</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
     ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${prCell(p.branchPr)}</td><td>${describe(p)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
     `<h3>Open issues and pull requests</h3>` + (issues.length ? `<div class="tbl"><table><tr><th>Project</th><th>Type</th><th>Title</th><th>Updated</th></tr>
@@ -603,8 +622,8 @@ function updatePlan() {
 }
 function drawPlan() {
   const el = $("#plan");
-  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${doneCount} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
-  const all = Object.values(plan), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
+  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${Math.min(doneCount, DATA.projects.length)} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
+  const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
   const left = open.filter((i) => !i.ticked).length;
   const button = (i) => !i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
@@ -684,7 +703,97 @@ function render() {
   if (focus >= 0) full.querySelectorAll("textarea")[focus]?.focus();
   fetchSummaries(p);
 }
-cards(); tabs(); render();
+
+// ---- Google: the search monitor (daily and weekly reports for each site), from search-monitor-data on GitHub.
+let sTab = "overview";
+const sView = {};
+const host = (u) => { try { return new URL(u).pathname || "/"; } catch { return u; } };
+const SITES = () => DATA.search?.sites || [];
+function sStatus(s) {
+  if (!s.setUp) return ["Not set up", "warn"];
+  if (s.lastRun && s.lastRun.conclusion !== "success") return ["Last run " + (s.lastRun.conclusion || "running"), "bad"];
+  const open = s.daily[0]?.open;
+  if (open) return [open + " open findings", "warn"];
+  return s.state && s.state.unknown === s.state.total ? ["No Google data yet", "warn"] : ["Healthy", "ok"];
+}
+function sCards() {
+  const el = $("#scards");
+  if (!DATA.search) { el.innerHTML = `<div class="card"><h2>Search monitor</h2><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Reading the latest reports from GitHub.</div></div>`; return; }
+  if (DATA.search.failed) { el.innerHTML = `<div class="empty bad" style="grid-column:1/-1">The search monitor reports couldn't be read from GitHub.<br><b>What to do:</b> make sure the gh tool is signed in (in PowerShell: gh auth status), then click Refresh now.</div>`; return; }
+  el.innerHTML = SITES().map((s) => {
+    const [label, cls] = sStatus(s), st = s.state, d = s.daily[0];
+    const hist = s.daily.slice(0, 14).reverse().filter((r) => r.open != null), max = Math.max(1, ...hist.map((r) => r.open));
+    return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
+      <div class="big ${cls}">${esc(label)}</div>
+      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) : "Daily workflow not found in " + esc(s.repo)}</div>
+      ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
+      ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+function sTabs() {
+  const items = [["overview", "Overview"], ...SITES().map((s) => [s.repo, s.name])];
+  $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
+}
+function sOverview() {
+  const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
+  const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
+  return `<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
+    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
+    `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
+}
+function sSiteView(s) {
+  if (!s.setUp) return `<div class="empty"><b>${esc(s.name)}</b> has no search monitor yet.<br><b>What to do:</b> run <code>/bwe-create-search-monitor-workflows</code> in the <code>${esc(s.repo)}</code> repo, then click Refresh now.</div>`;
+  const f = sView[s.repo] ||= { q: "", kind: "", verdict: "" };
+  const pages = s.state?.pages || [];
+  const kinds = [...new Set(pages.flatMap((x) => x.findings.map((y) => y.kind)))].sort();
+  const list = pages.filter((x) => (!f.q || x.url.toLowerCase().includes(f.q.toLowerCase())) &&
+    (!f.kind || x.findings.some((y) => y.kind === f.kind)) && (!f.verdict || (f.verdict === "ok" ? x.verdict === "PASS" : x.verdict !== "PASS")))
+    .sort((a, b) => (b.findings.length - a.findings.length) || a.url.localeCompare(b.url));
+  const d = s.daily[0];
+  return `<div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
+  <h3>Pages (${list.length} of ${pages.length})</h3>
+  <div class="stools"><input id="sq" placeholder="Filter by URL" value="${esc(f.q)}">
+    <select id="sk"><option value="">All findings</option>${kinds.map((k) => `<option ${f.kind === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
+    <select id="sv"><option value="">All pages</option><option value="ok" ${f.verdict === "ok" ? "selected" : ""}>Indexed</option><option value="no" ${f.verdict === "no" ? "selected" : ""}>Not indexed / unknown</option></select></div>
+  <div class="tbl"><table><tr><th>Page</th><th>Google</th><th>Last crawl</th><th>Findings</th></tr>
+  ${list.slice(0, 300).map((x) => `<tr><td class="url"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(host(x.url))}</a></td>
+    <td class="${x.verdict === "PASS" ? "ok" : "bad"}">${esc(x.coverage || x.verdict || "Not inspected")}</td><td>${x.lastCrawl ? x.lastCrawl.slice(0, 10) : "-"}</td>
+    <td>${x.findings.map((y) => `<span class="pill ${y.severity === "high" ? "bad" : "warn"}" title="${esc(y.detail)}">${esc(y.kind)}</span>`).join(" ") || "-"}</td></tr>`).join("")}</table></div>
+  ${list.length > 300 ? `<div class="sub">Showing first 300. Use the filters.</div>` : ""}
+  <h3>Daily reports</h3>${s.daily.map((r, i) => `<details ${i === 0 ? "open" : ""}><summary>${r.date} · ${r.open ?? "-"} open findings · ${r.checked ?? "-"} checked</summary><pre>${esc(r.md)}</pre></details>`).join("") || `<div class="empty">No daily reports yet.</div>`}
+  <h3>Weekly reports</h3>${s.weekly.map((r) => `<details><summary>${r.date}</summary><pre>${esc(r.md)}</pre></details>`).join("") || `<div class="empty">No weekly report yet. It posts Mondays.</div>`}`;
+}
+function sRender() {
+  sCards(); sTabs();
+  const s = SITES().find((x) => x.repo === sTab);
+  $("#sdetail").innerHTML = !DATA.search ? "" : s ? sSiteView(s) : sOverview();
+  if (!s || !s.setUp) return;
+  const f = sView[s.repo], on = (id, key) => { const el = $(id); if (el) el.oninput = () => { f[key] = el.value; const pos = el.selectionStart; sRender(); const n = $(id); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} }; };
+  on("#sq", "q"); on("#sk", "kind"); on("#sv", "verdict");
+}
+$("#stabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { sTab = k; sRender(); } };
+$("#scards").onclick = (e) => { const c = e.target.closest("[data-sopen]"); if (c) { sTab = c.dataset.sopen; sRender(); $("#stabs").scrollIntoView({ block: "nearest" }); } };
+
+// The section bar. Each section shows how many things need you.
+function groupsNav() {
+  const open = (g) => Object.values(plan).filter((i) => i.open && !i.ticked && groupOf(i.key) === g).length;
+  const n = (g) => g === "google" ? (SITES().reduce((a, s) => a + (s.daily[0]?.open || 0), 0)) : planReady ? open(g) : 0;
+  $("#groups").innerHTML = GROUPS.map(([k, name]) => `<button aria-pressed="${group === k}" data-g="${k}">${name}${n(k) ? `<span class="gn" title="${k === "google" ? "Open search findings" : "Actions waiting"}">${n(k)}</span>` : ""}</button>`).join("");
+}
+$("#groups").onclick = (e) => { const g = e.target.closest("[data-g]")?.dataset.g; if (g) setGroup(g); };
+function setGroup(g) {
+  if (g === group) return;
+  if (tab !== "overview") closeProject();
+  group = g; try { localStorage.setItem(GROUP_KEY, g); } catch {}
+  showGroup();
+}
+function showGroup() {
+  $("#gProjects").hidden = group === "google"; $("#gGoogle").hidden = group !== "google";
+  groupsNav();
+  if (group === "google") sRender(); else { cards(); tabs(); render(); drawPlan(); }
+}
+showGroup();
 if (live) poll().then(watchBuild); else { updatePlan(); drawPlan(); } // a file copy shows the data it was saved with
 </script>
 </body>

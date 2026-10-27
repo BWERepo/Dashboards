@@ -1,4 +1,5 @@
 // Shared by build.mjs and serve.mjs: the projects on the dashboard and where their Claude Code sessions live.
+import { execFile } from "node:child_process";
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -6,15 +7,17 @@ import { join } from "node:path";
 export const OWNER = "BWERepo";
 // cmd = the project's Checkpoint skill (staging + production release, commit, push), when it has one.
 export const PROJECTS = [
-  { key: "BWE", name: "Business Web Express", dir: "Z:/Backup/Websites/BusinessWebExpress", repo: "BWE", cmd: "/BWECheckpoint" },
-  { key: "BWE_HDBS", name: "Handmade Designs By Suzi", dir: "Z:/Backup/Websites/HandmadeDesignsBySuzi", repo: "HDBS", cmd: "/BWEHDBSCheckpoint" },
-  { key: "BWE_OneClickAnswers", name: "One Click Answers", dir: "Z:/Backup/websites/OneClickAnswers", repo: "OneClickAnswers", cmd: "/BWEOCACheckpoint" },
-  { key: "BWE_JKClassicBuggies", name: "JK Classic Buggies V2", dir: "Z:/Backup/websites/JKClassicBuggiesV2", repo: "JKClassicBuggiesV2", cmd: "/BWEJKCBCheckpoint" },
-  { key: "BWE_BlogEngine", name: "Blog Engine", dir: "Z:/Backup/websites/BlogEngine", repo: "BlogEngine" },
-  { key: "BWE_SEOEngine", name: "SEO Engine", dir: "Z:/Backup/websites/SEOEngine", repo: "SEOEngine" },
-  { key: "BWE_FAQEngine", name: "FAQ Engine", dir: "Z:/Backup/websites/FAQEngine", repo: "FAQEngine" },
-  { key: "BWE_ClaudeSkills", name: "Claude Skills", dir: "Z:/Backup/websites/ClaudeSkills", repo: "ClaudeSkills" },
-  { key: "BWE_Dashboards", name: "Dashboards", dir: "Z:/Backup/websites/Dashboards", repo: "Dashboards" },
+  // group = the dashboard tab the project is shown under.
+  { group: "websites", key: "BWE", name: "Business Web Express", dir: "Z:/Backup/Websites/BusinessWebExpress", repo: "BWE", cmd: "/BWECheckpoint" },
+  { group: "websites", key: "BWE_HDBS", name: "Handmade Designs By Suzi", dir: "Z:/Backup/Websites/HandmadeDesignsBySuzi", repo: "HDBS", cmd: "/BWEHDBSCheckpoint" },
+  { group: "websites", key: "BWE_OneClickAnswers", name: "One Click Answers", dir: "Z:/Backup/websites/OneClickAnswers", repo: "OneClickAnswers", cmd: "/BWEOCACheckpoint" },
+  { group: "websites", key: "BWE_JKClassicBuggies", name: "JK Classic Buggies V2", dir: "Z:/Backup/websites/JKClassicBuggiesV2", repo: "JKClassicBuggiesV2", cmd: "/BWEJKCBCheckpoint" },
+  { group: "websites", key: "BWE_ForTheTable", name: "For The Table", dir: "Z:/Backup/websites/ForTheTable", repo: "ForTheTable" },
+  { group: "utilities", key: "BWE_SEOEngine", name: "SEO Engine", dir: "Z:/Backup/websites/SEOEngine", repo: "SEOEngine" },
+  { group: "utilities", key: "BWE_FAQEngine", name: "FAQ Engine", dir: "Z:/Backup/websites/FAQEngine", repo: "FAQEngine" },
+  { group: "utilities", key: "BWE_BlogEngine", name: "Blog Engine", dir: "Z:/Backup/websites/BlogEngine", repo: "BlogEngine" },
+  { group: "utilities", key: "BWE_ClaudeSkills", name: "Claude Skills", dir: "Z:/Backup/websites/ClaudeSkills", repo: "ClaudeSkills" },
+  { group: "utilities", key: "BWE_Dashboard", name: "BWE Dashboard", dir: "Z:/Backup/websites/Dashboards", repo: "Dashboards" },
 ];
 export const byKey = (key) => PROJECTS.find((p) => p.key === key);
 export const winDir = (dir) => dir.replace(/\//g, "\\");
@@ -91,4 +94,69 @@ export function claudeSessions(dir, { sessions = 4, messages = 40 } = {}) {
       asking: !!last && last.role === "claude" && Date.now() - f.mtime < 3 * 864e5 && asksUser(last.text),
     };
   });
+}
+
+// ---- The Google tab: the latest results of the daily/weekly Search monitor workflows for each BWE site (the reports
+// the workflows commit to the search-monitor-data branch). Read-only, uses `gh`. Sites are read in parallel.
+export const SEARCH_SITES = [
+  { repo: "ForTheTable", name: "For The Table" },
+  { repo: "BWE", name: "Business Web Express" },
+  { repo: "HDBS", name: "Handmade Designs By Suzi" },
+  { repo: "OneClickAnswers", name: "One Click Answers" },
+];
+const BRANCH = "search-monitor-data";
+
+const gh = (args) => new Promise((resolve, reject) => execFile("gh", args, { encoding: "utf8", maxBuffer: 64 << 20, windowsHide: true },
+  (err, out, errOut) => (err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out))));
+const raw = (repo, path) => gh(["api", `repos/${OWNER}/${repo}/contents/${path}?ref=${BRANCH}`, "-H", "Accept: application/vnd.github.raw"]);
+const tryJson = async (fn) => { try { return JSON.parse(await fn()); } catch { return null; } };
+
+function parseReport(md) {
+  const num = (re) => { const m = md.match(re); return m ? Number(m[1]) : null; };
+  const flagged = [...md.matchAll(/^- \*\*([\w-]+)\*\* \((\w+)\) (\S+)(?: — (.*))?$/gm)]
+    .map((m) => ({ kind: m[1], severity: m[2], url: m[3], detail: m[4] || "" }));
+  return {
+    sitemap: num(/Sitemap: (\d+) URLs/),
+    sitemapNote: (md.match(/Sitemap: \d+ URLs \(([^)]*)\)/) || [])[1] || "",
+    checked: num(/Checked (\d+) URLs/),
+    fresh: num(/(\d+) new/),
+    open: num(/Open findings across the site: (\d+)/),
+    google: (md.match(/Google Search Console: (.*)/) || [])[1] || "",
+    flagged,
+  };
+}
+
+async function collectSite({ repo, name }) {
+  const site = { repo, name, url: `https://github.com/${OWNER}/${repo}`, setUp: false, daily: [], weekly: [] };
+  const runs = await tryJson(() => gh(["run", "list", "-R", `${OWNER}/${repo}`, "-w", "search-monitor-daily.yml", "-L", "1", "--json", "conclusion,createdAt,url"]));
+  if (runs === null) return site;
+  site.setUp = true;
+  site.lastRun = runs[0] || null;
+  const tree = await tryJson(() => gh(["api", `repos/${OWNER}/${repo}/git/trees/${BRANCH}?recursive=1`, "-q", "[.tree[].path]"]));
+  if (!tree) return site;
+  const reports = tree.filter((p) => /^reports\/(daily|weekly)-[\d-]+\.md$/.test(p)).sort().reverse().slice(0, 30);
+  const [mds, state] = await Promise.all([
+    Promise.all(reports.map((p) => raw(repo, p).catch(() => ""))),
+    tryJson(() => raw(repo, "state.json")),
+  ]);
+  reports.forEach((p, i) => {
+    const kind = p.includes("/weekly-") ? "weekly" : "daily", date = p.match(/(\d{4}-\d{2}-\d{2})/)[1], md = mds[i];
+    site[kind].push(kind === "daily" ? { date, ...parseReport(md), md } : { date, md });
+  });
+  if (state) {
+    const urls = Object.entries(state.urls || {});
+    const verdict = { indexed: 0, notIndexed: 0, unknown: 0 };
+    const pages = urls.map(([u, r]) => {
+      const g = r.google?.verdict;
+      if (g === "PASS") verdict.indexed++; else if (g) verdict.notIndexed++; else verdict.unknown++;
+      return { url: u, firstSeen: r.firstSeen, lastChecked: r.lastChecked, verdict: g || "", coverage: r.google?.coverage || "",
+        lastCrawl: r.google?.lastCrawl || "", findings: (r.findings || []).map((f) => ({ kind: f.kind, severity: f.severity, detail: f.detail || f.message || "" })) };
+    });
+    site.state = { total: urls.length, ...verdict, lastDaily: state.lastDaily || null, pages };
+  }
+  return site;
+}
+
+export async function collectSearch() {
+  return { updatedAt: new Date().toISOString(), sites: await Promise.all(SEARCH_SITES.map(collectSite)) };
 }

@@ -6,3 +6,10 @@ Local dashboards for the BWE projects.
 - `dashboard/` — latest search-monitor results for each site. Run `refresh.cmd` (http://127.0.0.1:8787).
 
 Both need Node and a signed-in `gh` CLI. `project-dashboard/jobs.json` holds checkpoint session state and is not committed.
+
+## BWE Dashboard (project-dashboard/)
+
+One page with three tabs: **Websites** (BWE, HDBS, One Click Answers, JK Classic Buggies, For The Table), **Utilities**
+(SEO, FAQ and Blog Engines, Claude Skills, this dashboard) and **Google** (the Search Monitor reports from each site's
+`search-monitor-data` branch). It replaces the separate search-monitor dashboard in `dashboard/`. Run `update.cmd` in
+`project-dashboard` to install it. Tab membership is the `group` of each project in `project-dashboard/projects.mjs`.
