@@ -281,7 +281,11 @@ function lastBlock(p) {
       rows.push([label, run ? `${mark(run.state)} <a href="${esc(run.url)}" target="_blank" rel="noopener">${short(run.at)}</a>` : "never run"]);
     }
   }
-  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
+  // PR, Commit and Push newer than the last successful deployment have not been deployed yet: flag them.
+  const okAt = Math.max(0, ...d.filter((x) => x.state === "success").map((x) => Date.parse(x.at) || 0));
+  const when = { PR: pr?.at, Commit: p.git?.last?.date, Push: push?.at };
+  const late = (k) => d.length && okAt && when[k] && Date.parse(when[k]) > okAt;
+  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => late(k) ? `<span class="warn">${k}</span><span class="warn">${v} &#9888; after last deployment</span>` : `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
 }
 function cards() {
   $("#cards").innerHTML = inGroup().map((p) => {
