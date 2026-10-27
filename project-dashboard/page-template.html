@@ -281,7 +281,11 @@ function lastBlock(p) {
       rows.push([label, run ? `${mark(run.state)} <a href="${esc(run.url)}" target="_blank" rel="noopener">${short(run.at)}</a>` : "never run"]);
     }
   }
-  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
+  // Flag the PR row when the newest merged PR was merged after the last successful deployment: it is not deployed yet.
+  const okAt = Math.max(0, ...d.filter((x) => x.state === "success").map((x) => Date.parse(x.at) || 0));
+  const mp = act.filter((i) => i.type === "pr" && i.state === "merged").sort((a, b) => Date.parse(b.merged || b.at) - Date.parse(a.merged || a.at))[0];
+  const late = (k) => k === "PR" && d.length && okAt && mp && Date.parse(mp.merged || mp.at) > okAt;
+  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => late(k) ? `<span class="warn">${k}</span><span class="warn">${v} &#9888; merged after last deployment</span>` : `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
 }
 function cards() {
   $("#cards").innerHTML = inGroup().map((p) => {
