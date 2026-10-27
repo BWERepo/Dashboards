@@ -107,6 +107,7 @@ body.locked{overflow:hidden}
 .stools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.stools input,.stools select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}.stools input{flex:1;min-width:200px}
 td.url{word-break:break-all}.tbl{overflow-x:auto}
 .lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:0 0 20px}.lists .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.lists h3{margin:0 0 6px;font-size:15px}.lists ul{list-style:none;margin:0;padding:0}.lists li{padding:5px 0;border-top:1px solid var(--line);font-size:14px}.lists li:first-child{border-top:0}.lists .k{font-weight:600;cursor:pointer}
+.last{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;margin:8px 0 0;font-size:12px;line-height:1.35}.last span:nth-child(odd){color:var(--mute)}
 .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
 .plan ol{margin:8px 0 0;padding-left:22px}.plan li{margin:6px 0}.plan li label{cursor:pointer}.plan li .meta{margin-left:6px}.plan li .ibtn{margin-left:8px;padding:2px 10px;font-size:13px}
 .plan li.done label{text-decoration:line-through;color:var(--mute)}.plan input{margin:0 6px 0 0;vertical-align:-2px}
@@ -260,6 +261,23 @@ function status(p) {
   return ["Clean", "ok"];
 }
 
+// The newest of each kind of event in a project: pull request, commit, push, and the staging, production and End-to-End
+// deployments. A push is read as the newest commit on GitHub. Times are local, 12-hour.
+const short = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) : "";
+function lastBlock(p) {
+  const act = p.remote.activity || [], d = p.remote.deploys || [], rows = [];
+  const mark = (s) => s === "success" ? `<b class="ok">&#10003;</b>` : /failure|timed_out|startup_failure/.test(s) ? `<b class="bad">&#10007;</b>` : `<b class="warn">&#8230;</b>`;
+  const pr = act.find((i) => i.type === "pr"), push = act.find((i) => i.type === "commit");
+  rows.push(["PR", pr ? `<a href="${esc(pr.url)}" target="_blank" rel="noopener">#${pr.number}</a> ${esc(pr.state)} · ${short(pr.at)}` : "none"]);
+  rows.push(["Commit", p.git?.last?.date ? short(p.git.last.date) : "none"]);
+  rows.push(["Push", push ? short(push.at) : "none"]);
+  if (d.length) {
+    const pick = (re) => d.filter((x) => re.test(x.workflow)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+    for (const [label, run] of [["Staging", pick(/staging/i)], ["Production", pick(/production/i)], ["End-to-End", pick(/end-to-end|e2e/i)]])
+      rows.push([label, run ? `${mark(run.state)} <a href="${esc(run.url)}" target="_blank" rel="noopener">${short(run.at)}</a>` : "never run"]);
+  }
+  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
+}
 function cards() {
   $("#cards").innerHTML = inGroup().map((p) => {
     const [label, cls] = status(p), c = counts(p);
@@ -272,6 +290,7 @@ function cards() {
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
       <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
+      ${lastBlock(p)}
       ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
       ${p.git ? gitButtons(p, c) : ""}
     </div>`;
