@@ -824,7 +824,7 @@ function sCards() {
     return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
       <div class="big ${cls}">${esc(label)}</div>
       <div class="sub">${esc(runNote(s))}</div>
-      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) + (s.state ? "<br>" + gscNote(s) : "") : "Daily workflow not found in " + esc(s.repo)}</div>
+      ${s.setUp ? `<div class="sub">Last daily run ${ago(s.lastRun?.createdAt)}${s.state ? "<br>" + gscNote(s) : ""}</div>` : ""}
       ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
       ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
     </div>`;
