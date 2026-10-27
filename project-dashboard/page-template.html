@@ -188,7 +188,7 @@ async function refresh() {
 }
 // Refresh now also clears the checked-off actions (ticked by you, or fixed); the list is then rebuilt from the new data,
 // so a ticked item that is still a problem comes back unticked.
-$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open) delete plan[it.id]; savePlan(); drawPlan(); drawLists(); refresh(); };
+$("#refresh").onclick = () => { for (const k of Object.keys(gitNote)) if (gitNote[k]?.bad) delete gitNote[k];  for (const it of Object.values(plan)) if (!it.open) delete plan[it.id]; savePlan(); drawPlan(); drawLists(); refresh(); };
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
@@ -329,7 +329,7 @@ const gitBusy = {}, gitNote = {};
 // that have deploy workflows). A result message from either shows underneath.
 function gitButtons(p, c, showSelect = true) {
   const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
-  const note = gitNote[p.key], g = p.git, dep = p.remote?.deployWorkflows || (p.remote?.deploys || []).map((x) => x.workflow);
+  const n0 = gitNote[p.key], note = n0?.deploy && n0.bad && (p.remote?.deploys || []).some((x) => x.state === "success" && Date.parse(x.at) > n0.at) ? null : n0, g = p.git, dep = p.remote?.deployWorkflows || (p.remote?.deploys || []).map((x) => x.workflow);
   const has = (re) => dep.some((x) => re.test(x));
   const pushBlock = g && (diverged(p) ? "diverged" : g.behind ? "pull first" : "");
   const gitSel = g && showSelect ? `<select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
@@ -351,10 +351,10 @@ function gitButtons(p, c, showSelect = true) {
 // Start a deploy workflow on GitHub. Asks first; the server finds the workflow and runs it on the default branch.
 async function deployAction(key, stage) {
   const p = DATA.projects.find((x) => x.key === key), label = { staging: "Staging", production: "Production", e2e: "End-to-End" }[stage];
-  const say = (text, bad) => { gitNote[key] = { text, bad }; if (!document.activeElement?.matches?.("#cards select")) cards(); };
+  const say = (text, bad) => { gitNote[key] = { text, bad, deploy: true, at: Date.now() }; if (!document.activeElement?.matches?.("#cards select")) cards(); };
   say("");
   const what = stage === "e2e" ? "an End-to-End deployment (staging, then production)" : `a ${label} deployment`;
-  if (!confirm(`Start ${what} of ${key} on GitHub now?\n\nIt runs the project's "${label}" workflow on its main branch.${stage !== "staging" ? "\n\nThis changes the live website." : ""}`)) return;
+  if (!confirm(`Start ${what} of ${key} on GitHub now?\n\nIt runs the project's "${label}" workflow on its main branch.${stage !== "staging" ? "\n\nThis changes the live website. If the workflow asks for the word \"release\", the dashboard enters it for you." : ""}`)) return;
   if (!live) { say("This page was opened as a file, so it can't start deployments.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).", true); return; }
   say(`Starting the ${label} deployment...`); gitBusy[key] = true; cards();
   try {
@@ -823,12 +823,32 @@ function sCards() {
     const hist = s.daily.slice(0, 14).reverse().filter((r) => r.open != null), max = Math.max(1, ...hist.map((r) => r.open));
     return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
       <div class="big ${cls}">${esc(label)}</div>
-      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) : "Daily workflow not found in " + esc(s.repo)}</div>
+      <div class="sub">${esc(runNote(s))}</div>
+      ${s.setUp ? `<div class="sub">Last daily run ${ago(s.lastRun?.createdAt)}${s.state ? "<br>" + gscNote(s) : ""}</div>` : ""}
       ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
       ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
     </div>`;
   }).join("");
 }
+// "m h * * *" in UTC -> next run and a local-time description. Only plain daily or fixed-hour schedules are understood.
+function cronInfo(cron) {
+  const m = String(cron || "").trim().split(/\s+/);
+  if (m.length < 5 || !/^\d+$/.test(m[0]) || !/^\d+$/.test(m[1])) return cron ? { text: "Runs on the schedule " + cron + " (UTC)" } : null;
+  const now = new Date(); let next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), +m[1], +m[0]));
+  const dow = m[4] === "*" ? null : m[4].split(",").map(Number);
+  for (let i = 0; i < 8 && (next <= now || (dow && !dow.includes(next.getUTCDay()))); i++) next = new Date(next.getTime() + 864e5);
+  const t = next.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+  return { text: `Runs ${dow ? "on selected days" : "daily"} at ${t}`, time: t, day: dow ? next.toLocaleDateString([], { weekday: "long" }) : "", next: `next run ${fmt(next.toISOString())}` };
+}
+const runNote = (s) => {
+  if (!s.setUp) return "Daily workflow not found in " + s.repo;
+  const d = cronInfo(s.cron), w = cronInfo(s.cronWeekly);
+  const wk = w ? " · Weekly report " + (w.day ? w.day + "s " : "") + "at " + w.time : "";
+  return d ? d.text + (d.next ? " · " + d.next : "") + wk : "Daily workflow schedule not found";
+};
+// When Google Search Console was last asked about this site: the newest per-page check in the monitor's state file.
+const gscAt = (s) => { const t = Math.max(0, ...(s.state?.pages || []).map((x) => Date.parse(x.lastChecked) || 0), Date.parse(s.state?.lastDaily) || 0); return t ? new Date(t).toISOString() : ""; };
+const gscNote = (s) => { const a = gscAt(s); return a ? `Google Search Console data updated ${fmt(a)} (${ago(a)})` : "No Google Search Console data yet"; };
 function sTabs() {
   const items = [["overview", "Overview"], ...SITES().map((s) => [s.repo, s.name])];
   $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
@@ -849,7 +869,7 @@ function sSiteView(s) {
     (!f.kind || x.findings.some((y) => y.kind === f.kind)) && (!f.verdict || (f.verdict === "ok" ? x.verdict === "PASS" : x.verdict !== "PASS")))
     .sort((a, b) => (b.findings.length - a.findings.length) || a.url.localeCompare(b.url));
   const d = s.daily[0];
-  return `<div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
+  return `<div class="sub"><b>${esc(runNote(s))}</b></div><div class="sub"><b>${gscNote(s)}</b></div><div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
   <h3>Indexed pages over time</h3>${lineChart([idxSeries(s)])}
   <h3>Pages (${list.length} of ${pages.length})</h3>
   <div class="stools"><input id="sq" placeholder="Filter by URL" value="${esc(f.q)}">
