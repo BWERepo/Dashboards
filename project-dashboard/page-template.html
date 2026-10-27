@@ -275,8 +275,11 @@ function lastBlock(p) {
   rows.push(["Push", push ? short(push.at) : "none"]);
   if (d.length) {
     const pick = (re) => d.filter((x) => re.test(x.workflow)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
-    for (const [label, run] of [["Staging", pick(/staging/i)], ["Production", pick(/production/i)], ["End-to-End", pick(/end-to-end|e2e/i)]])
+    const e2e = pick(/end-to-end|e2e/i), covered = e2e?.state === "success"; // a successful End-to-End run replaces the older staging and production times
+    for (const [label, run] of [["Staging", pick(/staging/i)], ["Production", pick(/production/i)], ["End-to-End", e2e]]) {
+      if (covered && label !== "End-to-End" && run && Date.parse(run.at) < Date.parse(e2e.at)) continue;
       rows.push([label, run ? `${mark(run.state)} <a href="${esc(run.url)}" target="_blank" rel="noopener">${short(run.at)}</a>` : "never run"]);
+    }
   }
   return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
 }
