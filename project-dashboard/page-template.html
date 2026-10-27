@@ -157,7 +157,7 @@ const GROUP_KEY = "projdash-group";
 let group = (() => { const k = tab !== "overview" && DATA.projects.find((p) => p.key === tab)?.group; if (k) return k; try { const g = localStorage.getItem(GROUP_KEY); return GROUPS.some(([x]) => x === g) ? g : "websites"; } catch { return "websites"; } })();
 const inGroup = () => DATA.projects.filter((p) => p.group === group);
 const groupOf = (key) => DATA.projects.find((p) => p.key === key)?.group;
-let view = "messages", ghFilter = "attention", showTools = false;
+let view = "messages", msgTab = "claude", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
 const AUTO_KEY = "projdash-auto";
@@ -551,21 +551,18 @@ function needPanel(p) {
   if (JOBS[p.key]?.status === "running") return workingPanel(p);
   const items = asking(p);
   if (!items.length) return "";
-  return `<div class="need" role="alert"><div class="needhead">&#128680; USER INPUT NEEDED &#128680;</div>${items.map((it) => {
+  return `<div class="need" role="alert"><div class="needhead">&#128680; Claude needs your answer</div>${items.map((it) => {
     const id = "box" + (boxN + 1);
     // Lettered options in the question (A:, B), C.) become quick-fill buttons; the answer is still sent by the user.
     const opts = [...new Set([...(it.text || "").matchAll(/^\s*(?:[-*]\s*)?\**\(?([A-D])[:.)]/gm)].map((m) => m[1]))];
     const rec = (it.text || "").match(/^.*\brecommend.*$/im)?.[0];
     return `<div class="needitem">
-      <div><b>Action Required:</b> Claude is waiting on you in <b>${esc(it.title)}</b> <span class="meta">· ${fmt(it.at)}</span></div>
+      <div><b>${esc(it.title)}</b> <span class="meta">· ${fmt(it.at)}</span></div>
       <div class="plain" data-sum="${sumKey(it.text)}">${sumHtml(it.text)}</div>
-      <div class="meta">Claude's original message:</div>
-      ${it.text.length > 600 ? `<div class="asktext">${md("…" + it.text.slice(-600))}</div><details><summary>Show the whole message</summary><div class="asktext">${md(it.text)}</div></details>` : `<div class="asktext">${md(it.text)}</div>`}
       ${it.denials.length ? `<div><b>Claude was blocked from:</b></div><ul class="items">${it.denials.map((d) => `<li><code>${esc(denialText(d))}</code></li>`).join("")}</ul><button class="rbtn" style="margin:0 0 8px" data-send="claude" data-allow="1" data-box="${id}">Allow these and continue</button>` : ""}
-      ${opts.length ? `<div class="tools"><b>Options:</b> ${opts.map((o) => `<button class="opt" data-pick="${o}" data-for="${id}">Option ${o}</button>`).join("")}</div>` : ""}
-      ${rec ? `<div><b>Recommendation:</b> ${md(rec.replace(/^[\s*#>-]+/, ""))}</div>` : ""}
+      ${opts.length ? `<div class="tools">${opts.map((o) => `<button class="opt" data-pick="${o}" data-for="${id}">Option ${o}</button>`).join("")}</div>` : ""}
       ${it.sessionId ? replyBox(`data-send="claude" ${it.job ? "" : `data-session="${esc(it.sessionId)}"`}`, "Type your answer") : ""}
-      <div class="note"><b>Awaiting your response before proceeding.</b></div></div>`;
+      <details><summary>Show Claude's full message</summary><div class="asktext">${md(it.text)}</div></details></div>`;
   }).join("")}</div>`;
 }
 
@@ -600,7 +597,7 @@ function claudeCol(p) {
   const sessions = (p.sessions || []).map((s, i) => `<details class="sess card" style="margin:0 0 8px" ${i === 0 || waits.has(s.id) ? "open" : ""}>
       <summary>${esc(s.title)} ${waits.has(s.id) ? `<span class="pill bad">Needs input</span>` : ""}<div class="meta">${fmt(s.updatedAt)} · ${s.total} messages${s.total > s.messages.length ? `, newest ${s.messages.length} shown` : ""}</div></summary>
       ${s.messages.filter((m) => showTools || m.role !== "tool").map((m) => m.role === "tool" ? `<div class="msg tool">&#8250; ${esc(m.text)}</div>` : `<div class="msg ${m.role}"><div class="meta">${who[m.role]} · ${fmt(m.at)}</div><div class="txt">${md(m.text)}</div></div>`).join("")}
-      ${waits.has(s.id) ? `<div class="note warn">Claude is waiting on you. Answer in the USER INPUT NEEDED box above.</div>` : `<details><summary>Reply to this session</summary>${replyBox(`data-send="claude" data-session="${esc(s.id)}"`, "Message Claude")}<div class="note">Sends with <code>claude --resume</code> in the background. Avoid this while the same session is open in a terminal.</div></details>`}
+      ${waits.has(s.id) ? `<div class="note warn">Claude is waiting on you. Answer in the red box above.</div>` : `<details><summary>Reply to this session</summary>${replyBox(`data-send="claude" data-session="${esc(s.id)}"`, "Message Claude")}<div class="note">Sends with <code>claude --resume</code> in the background. Avoid this while the same session is open in a terminal.</div></details>`}
     </details>`).join("");
   return jobPanel(p.key) + (sessions || `<div class="empty">No Claude Code sessions found for <code>${esc(p.dir)}</code>.</div>`);
 }
@@ -713,16 +710,16 @@ function fullView(p) {
       <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
       <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>
     </div>
-    ${view === "focus" ? "" : attention(p) + needPanel(p)}
-    <div class="fbody">${view === "focus" ? focusView(p) : view === "details" ? projectView(p) : `<div class="cols">
-      <section class="col" aria-label="Claude messages"><h3>Claude messages <span class="note">${(p.sessions || []).length} recent sessions</span> <span class="filters"><button data-act="tools" aria-pressed="${showTools}">Show tool steps</button></span></h3><div class="colbody">${claudeCol(p)}</div></section>
-      <section class="col" aria-label="GitHub messages"><h3>GitHub messages <span class="filters">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</span></h3><div class="colbody">${ghCol(p)}</div></section>
+    ${view === "focus" ? "" : needPanel(p)}
+    <div class="fbody">${view === "focus" ? focusView(p) : view === "details" ? projectView(p) : `<div class="seg" style="margin:0 0 10px" role="group" aria-label="Messages"><button data-tab="claude" aria-pressed="${msgTab === "claude"}">Claude</button><button data-tab="gh" aria-pressed="${msgTab === "gh"}">GitHub</button></div>
+      ${msgTab === "claude" ? `<div class="filters" style="margin:0 0 8px"><button data-act="tools" aria-pressed="${showTools}">Show tool steps</button></div><div>${claudeCol(p)}</div>` : `<div class="filters" style="margin:0 0 8px">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</div><div>${ghCol(p)}</div>`}
     </div>`}</div>`;
 }
 $("#full").addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-view],[data-gh]");
+  const t = e.target.closest("[data-act],[data-view],[data-gh],[data-tab]");
   if (!t) return;
-  if (t.dataset.view) { view = t.dataset.view; render(); }
+  if (t.dataset.tab) { msgTab = t.dataset.tab; render(); }
+  else if (t.dataset.view) { view = t.dataset.view; render(); }
   else if (t.dataset.gh) { ghFilter = t.dataset.gh; render(); }
   else if (t.dataset.act === "close") closeProject();
   else if (t.dataset.act === "tools") { showTools = !showTools; render(); }
@@ -909,10 +906,20 @@ function drawLists() {
   // PRs: the recent pull requests of every project (any state), newest first, each with what you need to do about it.
   const need = { open: "Review it, then merge it (or close it if it's not needed).", draft: "Nothing yet: it's still a draft.", merged: "Nothing: it's merged.", closed: "Nothing: it was closed without merging." };
   const prs = DATA.projects.filter((x) => !x.loading).flatMap((x) => (x.remote.activity || []).filter((i) => i.type === "pr").map((i) => ({ k: x.key, ...i }))).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 40);
-  const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${prs.length ? `<div class="tbl"><table><tr><th>Project</th><th>Timestamp</th><th>PR #</th><th>PR title</th><th>State</th><th>Merged</th><th>What's needed</th></tr>${prs.map((i) => `<tr><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td>${fmt(i.at)}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td>${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
+  const projs = [...new Set(prs.map((i) => i.k))], fo = (v, l) => `<option value="${esc(v)}" ${PF.k === v ? "selected" : ""}>${l}</option>`;
+  const filt = prs.length ? `<div class="tools" id="prf"><select data-pf="k" aria-label="Filter by project">${fo("", "All projects")}${projs.map((k) => fo(k, esc(k))).join("")}</select><input data-pf="n" placeholder="PR #" size="6" value="${esc(PF.n)}" aria-label="Filter by PR number"><input data-pf="t" placeholder="PR title contains" size="22" value="${esc(PF.t)}" aria-label="Filter by PR title"><select data-pf="m" aria-label="Filter by merged">${["", "yes", "no"].map((v) => `<option value="${v}" ${PF.m === v ? "selected" : ""}>${v === "" ? "Merged: any" : v === "yes" ? "Merged: yes" : "Merged: no"}</option>`).join("")}</select><span class="meta" id="prfn"></span></div>` : "";
+  const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${filt}${prs.length ? `<div class="tbl"><table><tr><th>Project</th><th>Timestamp</th><th>PR #</th><th>PR title</th><th>State</th><th>Merged</th><th>What's needed</th></tr>${prs.map((i) => `<tr data-prow data-k="${esc(i.k)}" data-n="${i.number}" data-t="${esc(i.title.toLowerCase())}" data-m="${i.state === "merged" ? "yes" : "no"}"><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td>${fmt(i.at)}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td>${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
   const deployBox = `<div class="box" style="grid-column:1/-1"><h3>Deployment</h3><div class="tbl"><table><tr><th>Project</th><th>Latest staging deployment</th><th>Latest production deployment</th></tr>${dep}</table></div></div>`;
   el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${deployBox}${prBox}</div>`;
+  applyPF();
 }
+const PF = { k: "", n: "", t: "", m: "" };
+function applyPF() {
+  const rows = [...document.querySelectorAll("#lists [data-prow]")]; let n = 0;
+  for (const r of rows) { const d = r.dataset, ok = (!PF.k || d.k === PF.k) && (!PF.n || d.n.includes(PF.n.replace(/^#/, "").trim())) && (!PF.t || d.t.includes(PF.t.toLowerCase())) && (!PF.m || d.m === PF.m); r.hidden = !ok; if (ok) n++; }
+  const c = $("#prfn"); if (c) c.textContent = n === rows.length ? "" : `Showing ${n} of ${rows.length}`;
+}
+$("#lists").addEventListener("input", (e) => { const f = e.target.dataset?.pf; if (f) { PF[f] = e.target.value; applyPF(); } });
 $("#lists").addEventListener("change", (e) => { const id = e.target.dataset?.lclose; if (!id) return; if (e.target.checked) DISM[id] = { sig: e.target.dataset.sig, at: Date.now() }; else delete DISM[id]; saveDism(); drawLists(); });
 $("#lists").addEventListener("click", (e) => { const n = e.target.closest("[data-lshow]")?.dataset.lshow; if (n) { showClosed[n] = !showClosed[n]; drawLists(); } });
 $("#lists").onclick = (e) => { const k = e.target.closest("[data-lopen]")?.dataset.lopen; if (!k) return; const g = groupOf(k); if (g && g !== group) setGroup(g); openProject(k); };
