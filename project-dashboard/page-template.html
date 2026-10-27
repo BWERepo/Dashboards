@@ -184,7 +184,7 @@ async function refresh() {
 }
 // Refresh now also clears the checked-off actions (ticked by you, or fixed); the list is then rebuilt from the new data,
 // so a ticked item that is still a problem comes back unticked.
-$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); drawPlan(); refresh(); };
+$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); for (const id of Object.keys(DISM)) delete DISM[id]; saveDism(); drawPlan(); drawLists(); refresh(); };
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
@@ -560,7 +560,7 @@ function claudeCol(p) {
 const GH_TYPES = { attention: "Needs attention", all: "All activity", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
 const failedRun = (i) => i.type === "run" && /fail|cancel|timed|startup/.test(i.state || "");
 // A failure only needs attention while it is that workflow's newest run; a later green run has fixed it.
-const openFailures = (p) => { const seen = new Set(); return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); return failedRun(i); }); };
+const openFailures = (p) => { const seen = new Set(), dep = p.remote.deploys || []; return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); const d = dep.find((x) => x.workflow === wf); return failedRun(i) && !(d && deploySuperseded(dep, d)); }); };
 const openItem = (i) => (i.type === "issue" || i.type === "pr") && i.state !== "closed" && i.state !== "merged";
 function ghCol(p) {
   const r = p.remote;
@@ -782,31 +782,59 @@ function sRender() {
 $("#stabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { sTab = k; sRender(); } };
 $("#scards").onclick = (e) => { const c = e.target.closest("[data-sopen]"); if (c) { sTab = c.dataset.sopen; sRender(); $("#stabs").scrollIntoView({ block: "nearest" }); } };
 
+// The newest run that deployed to a stage. A "Deploy End-to-End" workflow takes the same build through staging and then
+// production, so its run counts for both stages (the table says when it was the one used).
+const stageRun = (d, s) => d.filter((x) => x.stage === s || /end-to-end|e2e/i.test(x.workflow)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+const deploySuperseded = (d, x) => { const n = x.stage === "other" ? null : stageRun(d, x.stage); return !!n && n !== x && n.state === "success" && Date.parse(n.at) > Date.parse(x.at); };
 // Four lists across every project, worked out from each project's open PRs and its newest deploy runs.
 // Needs production = staging deployed OK and production has not caught up (or never ran). Deployed = production is current.
 function releaseLists() {
-  const L = { prs: [], errors: [], staging: [], needs: [], ok: [] }, t = (d) => Date.parse(d) || 0;
+  const L = { prs: [], errors: [], staging: [], needs: [] }, t = (d) => Date.parse(d) || 0;
   for (const p of DATA.projects) {
     if (p.loading) continue;
-    const k = p.key, d = p.remote.deploys || [], by = (s) => d.filter((x) => x.stage === s).sort((a, b) => t(b.at) - t(a.at))[0];
+    const k = p.key, d = p.remote.deploys || [], by = (s) => stageRun(d, s);
     for (const x of p.remote.prs) if (!x.isDraft) L.prs.push({ k, at: x.updatedAt, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}`, note: "updated " + fmt(x.updatedAt) });
-    for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
+    // A failed deploy is not an error any more once a newer run has deployed that stage successfully (a staging or production
+    // run, or an End-to-End run, which covers both).
+    for (const x of d) if (!deploySuperseded(d, x) && (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure")) L.errors.push({ k, id: "err|" + k + "|" + x.workflow, sig: x.at, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
     const st = by("staging"), pr = by("production");
     // Needs staging = GitHub has a commit newer than the newest staging run (or staging never ran).
-    const commit = (p.remote.activity || []).find((i) => i.type === "commit");
-    if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
-    if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
-    else if (pr?.state === "success") L.ok.push({ k, at: pr.at, html: `<a href="${esc(pr.url)}" target="_blank" rel="noopener">Production deployed</a>`, note: fmt(pr.at) });
+    // Commits the deploy workflows make themselves (version bumps "released/deployed by GitHub Actions") are not new work.
+    const commit = (p.remote.activity || []).find((i) => i.type === "commit" && !/\[bot\]|github-actions/i.test(i.author || "") && !/by GitHub Actions\)?\s*$/i.test(i.title));
+    if (st && commit && !/in_progress|queued|waiting|pending/.test(st.state) && t(commit.at) > t(st.at)) L.staging.push({ k, id: "stg|" + k, sig: commit.at + "|" + st.at, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
+    if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, id: "prod|" + k, sig: st.at + "|" + (pr?.at || ""), at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
   }
   return L;
 }
+// Entries in the error / staging / production lists can be closed (dismissed). A closed entry stays closed while the run or
+// commit it is about is unchanged, and comes back when something newer happens. Refresh now clears them all.
+const DISM_KEY = "projdash-closed";
+let DISM = (() => { try { return JSON.parse(localStorage.getItem(DISM_KEY)) || {}; } catch { return {}; } })();
+const saveDism = () => { try { localStorage.setItem(DISM_KEY, JSON.stringify(DISM)); } catch {} };
+const showClosed = {};
 function drawLists() {
   const el = $("#lists");
   if (!planReady) { el.innerHTML = ""; return; } // shown once every project has loaded, like the actions
   const L = releaseLists();
-  const box = (title, arr, empty, cls) => `<div class="box"><h3>${title} <span class="pill ${arr.length ? cls : "ok"}">${arr.length}</span></h3>${arr.length ? `<ul>${arr.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((i) => `<li><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span>: ${i.html} <span class="meta">${i.note}</span></li>`).join("")}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
-  el.innerHTML = `<div class="lists">${box("PRs to merge", L.prs, "No open pull requests.", "warn")}${box("Deployment errors", L.errors, "No failed deployments.", "bad")}${box("Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn")}${box("Needs production deployment", L.needs, "Production is up to date everywhere.", "warn")}${box("Successfully deployed", L.ok, "No production deployments found.", "ok")}</div>`;
+  for (const id of Object.keys(DISM)) if (![...L.errors, ...L.staging, ...L.needs].some((i) => i.id === id && i.sig === DISM[id].sig)) delete DISM[id]; // changed or gone
+  saveDism();
+  const box = (name, title, arr, empty, cls, closable) => {
+    const isClosed = (i) => closable && DISM[i.id]?.sig === i.sig, shut = arr.filter(isClosed), open = arr.filter((i) => !isClosed(i));
+    const li = (i, closed) => `<li class="${closed ? "done" : ""}">${closable ? `<input type="checkbox" data-lclose="${esc(i.id)}" data-sig="${esc(i.sig)}" ${closed ? "checked" : ""} title="${closed ? "Closed. Untick to restore it" : "Close this entry"}"> ` : ""}<span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span>: ${i.html} <span class="meta">${i.note}${closed ? " · closed " + fmt(new Date(DISM[i.id].at).toISOString()) : ""}</span></li>`;
+    const sorted = (a) => a.sort((x, y) => Date.parse(y.at) - Date.parse(x.at));
+    return `<div class="box"><h3>${title} <span class="pill ${open.length ? cls : "ok"}">${open.length}</span>${shut.length ? ` <button class="ibtn" style="padding:0 8px;font-size:12px" data-lshow="${name}">${showClosed[name] ? "Hide" : "Show"} ${shut.length} closed</button>` : ""}</h3>${open.length || (showClosed[name] && shut.length) ? `<ul>${sorted(open).map((i) => li(i, false)).join("")}${showClosed[name] ? sorted(shut).map((i) => li(i, true)).join("") : ""}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
+  };
+  // Deployment: each project's newest staging and production run, with when it ran and whether it worked.
+  const run = (x) => !x ? `<span class="meta">never run</span>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="${x.state === "success" ? "ok" : x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure" ? "bad" : "warn"}">${x.state === "success" ? "&#10003; Succeeded" : x.state === "failure" ? "&#10007; Failed" : esc(String(x.state).replace(/_/g, " "))}</a> <span class="meta">${fmt(x.at)}${/end-to-end|e2e/i.test(x.workflow) ? " · End-to-End" : ""}</span>`;
+  const dep = DATA.projects.filter((x) => !x.loading && x.group === "websites").map((x) => { // utilities are not deployed, so they are not listed
+    const d = x.remote.deploys || [], by = (s) => stageRun(d, s);
+    return `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td>${d.length ? `<td>${run(by("staging"))}</td><td>${run(by("production"))}</td>` : `<td colspan="2" class="meta">No deploy workflow found</td>`}</tr>`;
+  }).join("");
+  const deployBox = `<div class="box" style="grid-column:1/-1"><h3>Deployment</h3><div class="tbl"><table><tr><th>Project</th><th>Latest staging deployment</th><th>Latest production deployment</th></tr>${dep}</table></div></div>`;
+  el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${deployBox}</div>`;
 }
+$("#lists").addEventListener("change", (e) => { const id = e.target.dataset?.lclose; if (!id) return; if (e.target.checked) DISM[id] = { sig: e.target.dataset.sig, at: Date.now() }; else delete DISM[id]; saveDism(); drawLists(); });
+$("#lists").addEventListener("click", (e) => { const n = e.target.closest("[data-lshow]")?.dataset.lshow; if (n) { showClosed[n] = !showClosed[n]; drawLists(); } });
 $("#lists").onclick = (e) => { const k = e.target.closest("[data-lopen]")?.dataset.lopen; if (!k) return; const g = groupOf(k); if (g && g !== group) setGroup(g); openProject(k); };
 
 // The section bar. Each section shows how many things need you.
