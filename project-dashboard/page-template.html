@@ -838,9 +838,14 @@ function cronInfo(cron) {
   const dow = m[4] === "*" ? null : m[4].split(",").map(Number);
   for (let i = 0; i < 8 && (next <= now || (dow && !dow.includes(next.getUTCDay()))); i++) next = new Date(next.getTime() + 864e5);
   const t = next.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
-  return { text: `Runs ${dow ? "on selected days" : "daily"} at ${t}`, next: `next run ${fmt(next.toISOString())}` };
+  return { text: `Runs ${dow ? "on selected days" : "daily"} at ${t}`, time: t, day: dow ? next.toLocaleDateString([], { weekday: "long" }) : "", next: `next run ${fmt(next.toISOString())}` };
 }
-const runNote = (s) => { if (!s.setUp) return "Daily workflow not found in " + s.repo; const c = cronInfo(s.cron); return c ? c.text + (c.next ? " · " + c.next : "") : "Daily workflow schedule not found"; };
+const runNote = (s) => {
+  if (!s.setUp) return "Daily workflow not found in " + s.repo;
+  const d = cronInfo(s.cron), w = cronInfo(s.cronWeekly);
+  const wk = w ? " · Weekly report " + (w.day ? w.day + "s " : "") + "at " + w.time : "";
+  return d ? d.text + (d.next ? " · " + d.next : "") + wk : "Daily workflow schedule not found";
+};
 // When Google Search Console was last asked about this site: the newest per-page check in the monitor's state file.
 const gscAt = (s) => { const t = Math.max(0, ...(s.state?.pages || []).map((x) => Date.parse(x.lastChecked) || 0), Date.parse(s.state?.lastDaily) || 0); return t ? new Date(t).toISOString() : ""; };
 const gscNote = (s) => { const a = gscAt(s); return a ? `Google Search Console data updated ${fmt(a)} (${ago(a)})` : "No Google Search Console data yet"; };
