@@ -782,13 +782,16 @@ $("#scards").onclick = (e) => { const c = e.target.closest("[data-sopen]"); if (
 // Four lists across every project, worked out from each project's open PRs and its newest deploy runs.
 // Needs production = staging deployed OK and production has not caught up (or never ran). Deployed = production is current.
 function releaseLists() {
-  const L = { prs: [], errors: [], needs: [], ok: [] }, t = (d) => Date.parse(d) || 0;
+  const L = { prs: [], errors: [], staging: [], needs: [], ok: [] }, t = (d) => Date.parse(d) || 0;
   for (const p of DATA.projects) {
     if (p.loading) continue;
     const k = p.key, d = p.remote.deploys || [], by = (s) => d.filter((x) => x.stage === s).sort((a, b) => t(b.at) - t(a.at))[0];
     for (const x of p.remote.prs) if (!x.isDraft) L.prs.push({ k, at: x.updatedAt, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}`, note: "updated " + fmt(x.updatedAt) });
     for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
     const st = by("staging"), pr = by("production");
+    // Needs staging = GitHub has a commit newer than the newest staging run (or staging never ran).
+    const commit = (p.remote.activity || []).find((i) => i.type === "commit");
+    if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
     if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
     else if (pr?.state === "success") L.ok.push({ k, at: pr.at, html: `<a href="${esc(pr.url)}" target="_blank" rel="noopener">Production deployed</a>`, note: fmt(pr.at) });
   }
@@ -799,7 +802,7 @@ function drawLists() {
   if (!planReady) { el.innerHTML = ""; return; } // shown once every project has loaded, like the actions
   const L = releaseLists();
   const box = (title, arr, empty, cls) => `<div class="box"><h3>${title} <span class="pill ${arr.length ? cls : "ok"}">${arr.length}</span></h3>${arr.length ? `<ul>${arr.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((i) => `<li><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span>: ${i.html} <span class="meta">${i.note}</span></li>`).join("")}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
-  el.innerHTML = `<div class="lists">${box("PRs to merge", L.prs, "No open pull requests.", "warn")}${box("Deployment errors", L.errors, "No failed deployments.", "bad")}${box("Needs production deployment", L.needs, "Production is up to date everywhere.", "warn")}${box("Successfully deployed", L.ok, "No production deployments found.", "ok")}</div>`;
+  el.innerHTML = `<div class="lists">${box("PRs to merge", L.prs, "No open pull requests.", "warn")}${box("Deployment errors", L.errors, "No failed deployments.", "bad")}${box("Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn")}${box("Needs production deployment", L.needs, "Production is up to date everywhere.", "warn")}${box("Successfully deployed", L.ok, "No production deployments found.", "ok")}</div>`;
 }
 $("#lists").onclick = (e) => { const k = e.target.closest("[data-lopen]")?.dataset.lopen; if (!k) return; const g = groupOf(k); if (g && g !== group) setGroup(g); openProject(k); };
 
