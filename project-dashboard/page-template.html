@@ -13,11 +13,11 @@ header{padding:20px 16px 8px;max-width:1500px;margin:0 auto;display:flex;flex-wr
 h1{font-size:22px;margin:0}
 .sub{color:var(--mute);font-size:13px}
 main{max-width:1500px;margin:0 auto;padding:8px 16px 48px}
-.top{display:flex;gap:14px;align-items:flex-start;margin:12px 0 20px}.top .grid{flex:1;min-width:0;margin:0}.top #plan{flex:0 0 400px;position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto}.top #plan .plan{margin:0}
+.top{display:flex;gap:14px;align-items:flex-start;margin:12px 0 20px}.top .grid{flex:1;min-width:0;margin:0}.top #plan .plan{margin:0}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px}
 #cards.grid{grid-template-columns:repeat(3,minmax(0,1fr))}@media (max-width:700px){#cards.grid{grid-template-columns:1fr}}
 .grid .card{padding:9px 11px}.grid .card .sub{font-size:12px}.grid .big{font-size:17px}.grid .card{overflow-wrap:break-word}.grid .card h2{overflow-wrap:anywhere;font-size:15px}.grid .row{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin-top:6px}.grid .row b{display:inline;margin-right:5px}.grid .row small{display:inline;white-space:nowrap}.grid .row b{font-size:15px}.grid .row small{font-size:11px}.grid .row div{min-width:0}.grid .gitsel{padding:3px 6px;font-size:13px}
-@media (max-width:1000px){.top{flex-direction:column}.top #plan{flex:none;width:100%;position:static;max-height:none}}
+
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .card h2{font-size:16px;margin:0 0 2px}
 .big{font-size:24px;font-weight:650;line-height:1.2}
@@ -108,6 +108,7 @@ body.locked{overflow:hidden}
 td.url{word-break:break-all}.tbl{overflow-x:auto}
 .lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:0 0 20px}.lists .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.lists h3{margin:0 0 6px;font-size:15px}.lists ul{list-style:none;margin:0;padding:0}.lists li{padding:5px 0;border-top:1px solid var(--line);font-size:14px}.lists li:first-child{border-top:0}.lists .k{font-weight:600;cursor:pointer}
 .last{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;margin:8px 0 0;font-size:12px;line-height:1.35}.last span:nth-child(odd){color:var(--mute)}
+.cplan{margin:8px 0 0;border-top:1px solid var(--line);padding-top:6px;font-size:13px}.cplan ul{list-style:none;margin:4px 0 0;padding:0}.cplan li{margin:5px 0}.cplan li .meta{display:block;margin:0 0 0 22px}.cplan li.done label{text-decoration:line-through;color:var(--mute)}.cplan input{margin:0 6px 0 0;vertical-align:-2px}.cplan li label,.cplan li .meta,.cplan li label a{color:var(--warn)}.cplan li label a{text-decoration:underline}.cplan li.done label,.cplan li.done .meta,.cplan li.done label a{color:var(--mute)}.cplan .ibtn{margin:3px 4px 0 22px;padding:1px 10px;font-size:12px}.cplan .ibtn+.ibtn{margin-left:0}
 .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
 .plan ol{margin:8px 0 0;padding-left:22px}.plan li{margin:6px 0}.plan li label{cursor:pointer}.plan li .meta{margin-left:6px}.plan li .ibtn{margin-left:8px;padding:2px 10px;font-size:13px}
 .plan li.done label{text-decoration:line-through;color:var(--mute)}.plan input{margin:0 6px 0 0;vertical-align:-2px}
@@ -122,7 +123,7 @@ td.url{word-break:break-all}.tbl{overflow-x:auto}
 <main>
   <nav id="groups" aria-label="Dashboard sections"></nav>
   <div id="gProjects">
-  <div class="top"><div class="grid" id="cards"></div><section id="plan" aria-label="Recommended actions"></section></div>
+  <div class="top"><div class="grid" id="cards"></div></div>
   <nav id="tabs"></nav>
   <section id="detail"></section>
   <section id="lists"></section>
@@ -291,8 +292,9 @@ function cards() {
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
       <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
       ${lastBlock(p)}
+      ${planBlock(p)}
       ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
-      ${p.git ? gitButtons(p, c) : ""}
+      ${p.git && (!planReady || needsYou(p) || gitBusy[p.key] || gitNote[p.key]?.text) ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
 }
@@ -302,9 +304,9 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
+$("#cards").onclick = (e) => { if (e.target.closest("[data-git],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
 $("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
-$("#cards").onkeydown = (e) => { if (e.target.closest("[data-git]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
+$("#cards").onkeydown = (e) => { if (e.target.closest("[data-git],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
 // A Git dropdown on every card: Commit, Push, Commit & push, Pull, and Fix diverged (pull, then push).
 // A choice with nothing to do is greyed out with the reason.
@@ -628,8 +630,7 @@ function attention(p) {
 // Recommended actions across every project, shown once all of them have loaded. The list is kept in this browser:
 // an item that is no longer in the data is ticked as fixed; one can also be ticked by hand. Fixed items stay for 7 days.
 const PLAN_KEY = "projdash-plan";
-let plan = (() => { try { return JSON.parse(localStorage.getItem(PLAN_KEY)) || {}; } catch { return {}; } })(), planReady = false, planAll = false;
-const PLAN_SHOW = 8; // the most urgent few; the rest behind "Show all"
+let plan = (() => { try { return JSON.parse(localStorage.getItem(PLAN_KEY)) || {}; } catch { return {}; } })(), planReady = false;
 const savePlan = () => { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch {} };
 function updatePlan() {
   const now = Date.now(), order = DATA.projects.map((p) => p.key);
@@ -643,30 +644,36 @@ function updatePlan() {
   }
   savePlan(); planReady = true;
 }
-function drawPlan() {
-  const el = $("#plan");
-  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${Math.min(doneCount, DATA.projects.length)} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
-  const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open && !i.ticked).sort((a, b) => a.pri - b.pri || a.order - b.order),
-    // A ticked action is closed: it leaves the to-do list at once and waits under "Show all", with the fixed ones.
-    done = all.filter((i) => !i.open || i.ticked).sort((a, b) => (b.doneAt || b.tickedAt || 0) - (a.doneAt || a.tickedAt || 0));
-  const left = open.length;
+// Recommended actions live in each project's card: what needs doing there, a checkbox to close each, and a button for the fix.
+// Ticking closes an action (it leaves the list, and waits under "closed"); Refresh now clears the closed ones.
+const PLAN_SHOW = 4, planMore = {}, planClosed = {};
+// Does the project have any open, unticked action? When nothing needs you the Git dropdown is not shown.
+const needsYou = (p) => Object.values(plan).some((i) => i.key === p.key && i.open && !i.ticked);
+function planBlock(p) {
+  if (!planReady) return building ? `<div class="cplan meta">Checking what needs you...</div>` : "";
+  const all = Object.values(plan).filter((i) => i.key === p.key), open = all.filter((i) => i.open && !i.ticked).sort((a, b) => a.pri - b.pri || a.order - b.order),
+    shut = all.filter((i) => !i.open || i.ticked).sort((a, b) => (b.doneAt || b.tickedAt || 0) - (a.doneAt || a.tickedAt || 0));
   const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
   const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
-  const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}><b>${esc(i.key)}</b>: ${i.what}</label>
-    <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Closed by you " + fmt(new Date(i.tickedAt || Date.now()).toISOString()) + ". It's still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
-  el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} still to do` : "All done"}${done.length ? ` · ${done.length} closed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear closed</button>` : ""}</div>
-    ${open.length || done.length ? `<ol>${(planAll ? [...open, ...done] : [...open.slice(0, PLAN_SHOW), ...done.filter((i) => !i.open && Date.now() - i.doneAt < 36e5)]).map(row).join("")}</ol>${open.length > PLAN_SHOW || done.length ? `<button class="ibtn" data-plan-all>${planAll ? "Show fewer" : `Show all ${open.length} to do${done.length ? ` and ${done.length} closed` : ""}`}</button>` : ""}` : `<div class="ok" style="margin-top:6px">&#10003; Nothing to do. Every project is up to date.</div>`}</div>`;
+  const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}>${i.what}</label>
+    <span class="meta">${!i.open ? "&#10003; Fixed " + short(new Date(i.doneAt).toISOString()) : i.ticked ? "Closed by you " + short(new Date(i.tickedAt || Date.now()).toISOString()) + ". Still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
+  const shown = planMore[p.key] ? open : open.slice(0, PLAN_SHOW);
+  return `<div class="cplan" data-noopen><b class="${open.length ? "warn" : ""}">${open.length ? `Needs you (${open.length})` : `<span class="ok">&#10003; Nothing needs you</span>`}</b>${building ? ` <span class="meta">checking again...</span>` : ""}
+    ${shown.length ? `<ul>${shown.map(row).join("")}</ul>` : ""}
+    ${open.length > PLAN_SHOW ? `<button class="ibtn" data-plan-more="${esc(p.key)}">${planMore[p.key] ? "Show fewer" : `Show ${open.length - PLAN_SHOW} more`}</button>` : ""}
+    ${shut.length ? `<button class="ibtn" data-plan-closed="${esc(p.key)}">${planClosed[p.key] ? "Hide" : "Show"} ${shut.length} closed</button>${planClosed[p.key] ? `<ul>${shut.map(row).join("")}</ul>` : ""}` : ""}</div>`;
 }
-$("#plan").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); savePlan(); drawPlan(); } });
-$("#plan").addEventListener("click", (e) => {
-  const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-clear],[data-plan-all]");
+function drawPlan() { if (!document.activeElement?.matches?.("#cards select")) cards(); } // a redraw would close an open dropdown
+$("#cards").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); savePlan(); drawPlan(); } });
+$("#cards").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-more],[data-plan-closed]");
   if (!t) return;
-  if (t.dataset.planAll !== undefined) { planAll = !planAll; drawPlan(); }
+  if (t.dataset.planMore) { planMore[t.dataset.planMore] = !planMore[t.dataset.planMore]; drawPlan(); }
+  else if (t.dataset.planClosed) { planClosed[t.dataset.planClosed] = !planClosed[t.dataset.planClosed]; drawPlan(); }
   else if (t.dataset.planGit) gitAction(t.dataset.key, t.dataset.planGit);
   else if (t.dataset.planOpen) openProject(t.dataset.planOpen, t.dataset.jump || undefined);
-  else { for (const it of Object.values(plan)) if (!it.open) delete plan[it.id]; savePlan(); drawPlan(); }
 });
 
 function fullView(p) {
