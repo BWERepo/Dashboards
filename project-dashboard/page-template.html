@@ -255,6 +255,7 @@ function status(p) {
   if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
   if (c.uncommitted || c.unpushed) return ["Needs commit", "warn"];
   if (p.git.behind) return ["Behind remote", "warn"];
+  if (openFailures(p).length) return ["Action failed", "bad"]; // a GitHub Actions workflow whose newest run failed
   if (c.issues || c.prs) return ["Open items", "warn"];
   return ["Clean", "ok"];
 }
