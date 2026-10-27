@@ -187,7 +187,7 @@ async function refresh() {
 }
 // Refresh now also clears the checked-off actions (ticked by you, or fixed); the list is then rebuilt from the new data,
 // so a ticked item that is still a problem comes back unticked.
-$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); for (const id of Object.keys(DISM)) delete DISM[id]; saveDism(); drawPlan(); drawLists(); refresh(); };
+$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open) delete plan[it.id]; savePlan(); drawPlan(); drawLists(); refresh(); };
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
@@ -662,7 +662,7 @@ function updatePlan() {
   const cur = DATA.projects.flatMap((p) => todo(p).filter((i) => i.plan));
   if (DATA.projects.some((p) => p.loading)) return;
   const ids = new Set(cur.map((i) => i.id));
-  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, btn2: i.btn2, open: true, ticked: !!(old?.open && old.ticked) }; });
+  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, btn2: i.btn2, open: true, ticked: !!(old?.open && old.ticked && old.what === i.what) }; });
   for (const it of Object.values(plan)) {
     if (!ids.has(it.id) && it.open) { it.open = false; it.doneAt = now; }
     if (!it.open && now - it.doneAt > 7 * 864e5) delete plan[it.id];
