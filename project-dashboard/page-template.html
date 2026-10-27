@@ -161,7 +161,9 @@ async function refresh() {
     stamp(/failed to fetch|networkerror/i.test(err.message) ? offline : /What to do:/.test(err.message) ? err.message : "Refresh failed: " + err.message + "\nWhat to do: click Refresh now again; if it keeps failing, send a screenshot to Claude.");
   }
 }
-$("#refresh").onclick = () => refresh();
+// Refresh now also clears the checked-off actions (ticked by you, or fixed); the list is then rebuilt from the new data,
+// so a ticked item that is still a problem comes back unticked.
+$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); drawPlan(); refresh(); };
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
