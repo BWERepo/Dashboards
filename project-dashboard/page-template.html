@@ -782,13 +782,16 @@ function sRender() {
 $("#stabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { sTab = k; sRender(); } };
 $("#scards").onclick = (e) => { const c = e.target.closest("[data-sopen]"); if (c) { sTab = c.dataset.sopen; sRender(); $("#stabs").scrollIntoView({ block: "nearest" }); } };
 
+// The newest run that deployed to a stage. A "Deploy End-to-End" workflow takes the same build through staging and then
+// production, so its run counts for both stages (the table says when it was the one used).
+const stageRun = (d, s) => d.filter((x) => x.stage === s || /end-to-end|e2e/i.test(x.workflow)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
 // Four lists across every project, worked out from each project's open PRs and its newest deploy runs.
 // Needs production = staging deployed OK and production has not caught up (or never ran). Deployed = production is current.
 function releaseLists() {
   const L = { prs: [], errors: [], staging: [], needs: [] }, t = (d) => Date.parse(d) || 0;
   for (const p of DATA.projects) {
     if (p.loading) continue;
-    const k = p.key, d = p.remote.deploys || [], by = (s) => d.filter((x) => x.stage === s).sort((a, b) => t(b.at) - t(a.at))[0];
+    const k = p.key, d = p.remote.deploys || [], by = (s) => stageRun(d, s);
     for (const x of p.remote.prs) if (!x.isDraft) L.prs.push({ k, at: x.updatedAt, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}`, note: "updated " + fmt(x.updatedAt) });
     for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, id: "err|" + k + "|" + x.workflow, sig: x.at, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
     const st = by("staging"), pr = by("production");
@@ -818,9 +821,9 @@ function drawLists() {
     return `<div class="box"><h3>${title} <span class="pill ${open.length ? cls : "ok"}">${open.length}</span>${shut.length ? ` <button class="ibtn" style="padding:0 8px;font-size:12px" data-lshow="${name}">${showClosed[name] ? "Hide" : "Show"} ${shut.length} closed</button>` : ""}</h3>${open.length || (showClosed[name] && shut.length) ? `<ul>${sorted(open).map((i) => li(i, false)).join("")}${showClosed[name] ? sorted(shut).map((i) => li(i, true)).join("") : ""}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
   };
   // Deployment: each project's newest staging and production run, with when it ran and whether it worked.
-  const run = (x) => !x ? `<span class="meta">never run</span>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="${x.state === "success" ? "ok" : x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure" ? "bad" : "warn"}">${x.state === "success" ? "&#10003; Succeeded" : x.state === "failure" ? "&#10007; Failed" : esc(String(x.state).replace(/_/g, " "))}</a> <span class="meta">${fmt(x.at)}</span>`;
+  const run = (x) => !x ? `<span class="meta">never run</span>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="${x.state === "success" ? "ok" : x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure" ? "bad" : "warn"}">${x.state === "success" ? "&#10003; Succeeded" : x.state === "failure" ? "&#10007; Failed" : esc(String(x.state).replace(/_/g, " "))}</a> <span class="meta">${fmt(x.at)}${/end-to-end|e2e/i.test(x.workflow) ? " · End-to-End" : ""}</span>`;
   const dep = DATA.projects.filter((x) => !x.loading).map((x) => {
-    const d = x.remote.deploys || [], by = (s) => d.filter((y) => y.stage === s).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+    const d = x.remote.deploys || [], by = (s) => stageRun(d, s);
     return `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td>${d.length ? `<td>${run(by("staging"))}</td><td>${run(by("production"))}</td>` : `<td colspan="2" class="meta">No deploy workflow found</td>`}</tr>`;
   }).join("");
   const deployBox = `<div class="box" style="grid-column:1/-1"><h3>Deployment</h3><div class="tbl"><table><tr><th>Project</th><th>Latest staging deployment</th><th>Latest production deployment</th></tr>${dep}</table></div></div>`;
