@@ -355,7 +355,7 @@ function focusView(p) {
     body = r.prs.map((x) => { const f = full(x.number); return card(`#${x.number} ${esc(x.title)}${x.isDraft ? ` <span class="pill">draft</span>` : ""}`,
       `${esc(f?.author || "")}${f?.created ? " · opened " + fmt(f.created) : ""} · updated ${ago(x.updatedAt)}`, short(f?.body),
       x.isDraft ? "It's a draft, so it's still being worked on. Nothing to do yet." : "Open it on GitHub, check the changes, then press <b>Merge</b> if it looks right, or <b>Close</b> it if it's no longer needed.",
-      gh(x.url, "Open on GitHub")); }).join("") || `<div class="empty">No open pull requests. Nothing to do.</div>`;
+      gh(x.url, "Open on GitHub") + ` <button class="ibtn" data-close-pr="${x.number}" data-key="${esc(p.key)}">Close PR #${x.number}</button>`); }).join("") || `<div class="empty">No open pull requests. Nothing to do.</div>`;
   } else if (focusKind === "issues") {
     head = `Open issues (${r.issues.length})`;
     body = r.issues.map((i) => card(`#${i.number} ${esc(i.title)}`, `updated ${ago(i.updatedAt)}${i.labels.length ? " · " + i.labels.map(esc).join(", ") : ""}`, short(i.body),
@@ -579,7 +579,7 @@ function ghCol(p) {
 // after the fix is ticked off.
 function todo(p) {
   const g = p.git, c = counts(p), items = [], k = p.key;
-  const add = (pri, cls, id, what, todo, btn, plan = true) => items.push({ id: k + "|" + id, key: k, pri, cls, what, todo, btn, plan });
+  const add = (pri, cls, id, what, todo, btn, plan = true, btn2 = null) => items.push({ id: k + "|" + id, key: k, pri, cls, what, todo, btn, plan, btn2 });
   if (p.loading) return [];
   const n = JOBS[k]?.status === "running" ? 0 : asking(p).length;
   if (JOBS[k]?.status === "running") add(9, "warn", "running", "Claude is working on this project right now.", "Wait for it to finish; the page updates by itself.", null, false);
@@ -592,7 +592,7 @@ function todo(p) {
     else if (c.unpushed) add(4, "warn", "push", `${c.unpushed} commit(s) not pushed to GitHub.`, "Push them.", { label: "Push", git: "push" });
   }
   for (const i of openFailures(p).slice(0, 3)) add(1, "bad", "run|" + i.title.split(": ")[0], `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why, then ask Claude in this project to fix it.", { label: "See why", url: i.url });
-  for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft);
+  for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft, { number: x.number });
   for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" });
   return items.sort((a, b) => a.pri - b.pri);
 }
@@ -614,7 +614,7 @@ function updatePlan() {
   const cur = DATA.projects.flatMap((p) => todo(p).filter((i) => i.plan));
   if (DATA.projects.some((p) => p.loading)) return;
   const ids = new Set(cur.map((i) => i.id));
-  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, open: true, ticked: !!(old?.open && old.ticked) }; });
+  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, btn2: i.btn2, open: true, ticked: !!(old?.open && old.ticked) }; });
   for (const it of Object.values(plan)) {
     if (!ids.has(it.id) && it.open) { it.open = false; it.doneAt = now; }
     if (!it.open && now - it.doneAt > 7 * 864e5) delete plan[it.id];
@@ -626,9 +626,10 @@ function drawPlan() {
   if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${Math.min(doneCount, DATA.projects.length)} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
   const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
   const left = open.filter((i) => !i.ticked).length;
-  const button = (i) => !i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
+  const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" data-close-pr="${i.btn2.number}" data-key="${esc(i.key)}">Close PR</button>` : "";
+  const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
-    : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`;
+    : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
   const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}><b>${esc(i.key)}</b>: ${i.what}</label>
     <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Ticked by you. It's still in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
   el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} of ${open.length} still to do` : "All done"}${done.length ? ` · ${done.length} fixed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear fixed</button>` : ""}</div>
@@ -782,6 +783,22 @@ function groupsNav() {
   const n = (g) => g === "google" ? (SITES().reduce((a, s) => a + (s.daily[0]?.open || 0), 0)) : planReady ? open(g) : 0;
   $("#groups").innerHTML = GROUPS.map(([k, name]) => `<button aria-pressed="${group === k}" data-g="${k}">${name}${n(k) ? `<span class="gn" title="${k === "google" ? "Open search findings" : "Actions waiting"}">${n(k)}</span>` : ""}</button>`).join("");
 }
+// Close a pull request on GitHub (never merges it, and leaves its branch). Asks first.
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-close-pr]"); if (!b) return;
+  const n = b.dataset.closePr, key = b.dataset.key, pr = DATA.projects.find((x) => x.key === key)?.remote.prs.find((x) => String(x.number) === n);
+  if (!confirm(`Close pull request #${n}${pr ? ` "${pr.title}"` : ""} in ${key} on GitHub?\n\nIt is closed without merging. Its changes are not used, and its branch is kept.`)) return;
+  if (!live) { alert("This page was opened as a file, so it can't close pull requests.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788)."); return; }
+  b.disabled = true; b.textContent = "Closing...";
+  try {
+    const r = await fetch("/gh-close/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ number: Number(n) }) });
+    if (!r.ok) throw new Error(await r.text());
+    refresh(); // the list is rebuilt from GitHub, so the closed PR drops out and its action is ticked as Fixed
+  } catch (err) {
+    b.disabled = false; b.textContent = "Close PR";
+    alert(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? offline : err.message + "\nWhat to do: try again. If it keeps failing, send a screenshot of this message to Claude.");
+  }
+});
 $("#groups").onclick = (e) => { const g = e.target.closest("[data-g]")?.dataset.g; if (g) setGroup(g); };
 function setGroup(g) {
   if (g === group) return;
