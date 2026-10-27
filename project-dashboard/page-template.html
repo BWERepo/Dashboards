@@ -266,6 +266,8 @@ function status(p) {
 // The newest of each kind of event in a project: pull request, commit, push, and the staging, production and End-to-End
 // deployments. A push is read as the newest commit on GitHub. Times are local, 12-hour.
 const short = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) : "";
+const FLAGX_KEY = "projdash-flagx";
+let FLAGX = (() => { try { return JSON.parse(localStorage.getItem(FLAGX_KEY)) || {}; } catch { return {}; } })();
 function lastBlock(p) {
   const act = p.remote.activity || [], d = p.remote.deploys || [], rows = [];
   const mark = (s) => s === "success" ? `<b class="ok">&#10003;</b>` : /failure|timed_out|startup_failure/.test(s) ? `<b class="bad">&#10007;</b>` : `<b class="warn">&#8230;</b>`;
@@ -284,8 +286,8 @@ function lastBlock(p) {
   // Flag the PR row when the newest merged PR was merged after the last successful deployment: it is not deployed yet.
   const okAt = Math.max(0, ...d.filter((x) => x.state === "success").map((x) => Date.parse(x.at) || 0));
   const mp = act.filter((i) => i.type === "pr" && i.state === "merged").sort((a, b) => Date.parse(b.merged || b.at) - Date.parse(a.merged || a.at))[0];
-  const late = (k) => k === "PR" && d.length && okAt && mp && Date.parse(mp.merged || mp.at) > okAt;
-  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => late(k) ? `<span class="warn">${k}</span><span class="warn">${v} &#9888; merged after last deployment</span>` : `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
+  const sig = mp ? mp.number + "|" + (mp.merged || mp.at) : "", late = (k) => k === "PR" && d.length && okAt && mp && Date.parse(mp.merged || mp.at) > okAt && FLAGX[p.key] !== sig; // closed flags come back when a newer PR is merged
+  return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => late(k) ? `<span class="warn">${k}</span><span>${v} <span class="warn">&#9888; merged after last deployment</span> <button class="ibtn" style="padding:0 6px" data-flagx="${esc(p.key)}" data-sig="${esc(sig)}" title="Close this message">&#10005;</button></span>` : `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
 }
 function cards() {
   $("#cards").innerHTML = inGroup().map((p) => {
@@ -312,7 +314,8 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { if (e.target.closest("a,[data-git],[data-deploy],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
+$("#cards").addEventListener("click", (e) => { const b = e.target.closest("[data-flagx]"); if (!b) return; FLAGX[b.dataset.flagx] = b.dataset.sig; try { localStorage.setItem(FLAGX_KEY, JSON.stringify(FLAGX)); } catch {} cards(); });
+$("#cards").onclick = (e) => { if (e.target.closest("[data-flagx]")) return; if (e.target.closest("a,[data-git],[data-deploy],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
 $("#cards").onchange = (e) => { const s = e.target.closest("select[data-git],select[data-deploy]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); if (s.dataset.deploy !== undefined) deployAction(s.dataset.key, act); else gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
 $("#cards").onkeydown = (e) => { if (e.target.closest("a,[data-git],[data-deploy],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
