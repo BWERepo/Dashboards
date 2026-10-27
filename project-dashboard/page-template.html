@@ -749,6 +749,27 @@ function sStatus(s) {
   if (open) return [open + " open findings", "warn"];
   return s.state && s.state.unknown === s.state.total ? ["No Google data yet", "warn"] : ["Healthy", "ok"];
 }
+// A line chart (inline SVG) of the number of Google-indexed pages over time. series: [{ name, color, points: [{ at, v }] }].
+const SCOL = ["var(--accent)", "var(--ok)", "var(--warn)", "#c678dd"];
+function lineChart(series) {
+  const pts = series.flatMap((s) => s.points);
+  if (pts.length < 2) return `<div class="empty">Not enough history yet. The chart draws once there are two days of results.</div>`;
+  const W = 760, H = 220, L = 44, R = 16, T = 14, B = 30;
+  const xs = pts.map((q) => Date.parse(q.at)), x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1), ymax = Math.max(1, ...pts.map((q) => q.v));
+  const top = Math.ceil(ymax / (ymax > 20 ? 10 : ymax > 5 ? 5 : 1)) * (ymax > 20 ? 10 : ymax > 5 ? 5 : 1) || 1;
+  const X = (q) => L + (Date.parse(q.at) - x0) / (x1 - x0) * (W - L - R), Y = (q) => T + (1 - q.v / top) * (H - T - B);
+  const day = (iso) => new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+  const grid = [0, .25, .5, .75, 1].map((f) => { const y = T + (1 - f) * (H - T - B); return `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--mute)">${Math.round(top * f)}</text>`; }).join("");
+  // x-axis labels: at most 6 of the days that have data, spread evenly (each day once).
+  const days = [...new Map([...pts].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).map((q) => [day(q.at), q])).values()];
+  const pick = days.length <= 6 ? days : Array.from({ length: 6 }, (_, i) => days[Math.round(i * (days.length - 1) / 5)]);
+  const ticks = pick.map((q, i) => `<text x="${X(q).toFixed(1)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === pick.length - 1 ? "end" : "middle"}" font-size="11" fill="var(--mute)">${day(q.at)}</text>`).join("");
+  const lines = series.map((s, i) => { const c = s.color || SCOL[i % SCOL.length], d = s.points.map((q) => `${X(q).toFixed(1)},${Y(q).toFixed(1)}`).join(" ");
+    return `<polyline points="${d}" fill="none" stroke="${c}" stroke-width="2"/>${s.points.map((q) => `<circle cx="${X(q).toFixed(1)}" cy="${Y(q).toFixed(1)}" r="3" fill="${c}"><title>${esc(s.name)}: ${q.v} indexed · ${fmt(q.at)}</title></circle>`).join("")}`; }).join("");
+  const legend = series.length > 1 ? `<div class="sub" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">${series.map((s, i) => `<span><b style="color:${s.color || SCOL[i % SCOL.length]}">&#9632;</b> ${esc(s.name)}</span>`).join("")}</div>` : "";
+  return `<div class="card" style="padding:10px 14px"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Indexed pages over time" style="width:100%;height:auto;max-height:260px">${grid}${ticks}${lines}</svg>${legend}</div>`;
+}
+const idxSeries = (s) => ({ name: s.name, points: (s.history || []).map((h) => ({ at: h.at, v: h.indexed })) });
 function sCards() {
   const el = $("#scards");
   if (!DATA.search) { el.innerHTML = `<div class="card"><h2>Search monitor</h2><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Reading the latest reports from GitHub.</div></div>`; return; }
@@ -771,7 +792,7 @@ function sTabs() {
 function sOverview() {
   const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
   const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
+  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
     ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
     `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
 }
@@ -785,6 +806,7 @@ function sSiteView(s) {
     .sort((a, b) => (b.findings.length - a.findings.length) || a.url.localeCompare(b.url));
   const d = s.daily[0];
   return `<div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
+  <h3>Indexed pages over time</h3>${lineChart([idxSeries(s)])}
   <h3>Pages (${list.length} of ${pages.length})</h3>
   <div class="stools"><input id="sq" placeholder="Filter by URL" value="${esc(f.q)}">
     <select id="sk"><option value="">All findings</option>${kinds.map((k) => `<option ${f.kind === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>

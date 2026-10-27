@@ -108,7 +108,7 @@ const BRANCH = "search-monitor-data";
 
 const gh = (args) => new Promise((resolve, reject) => execFile("gh", args, { encoding: "utf8", maxBuffer: 64 << 20, windowsHide: true },
   (err, out, errOut) => (err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out))));
-const raw = (repo, path) => gh(["api", `repos/${OWNER}/${repo}/contents/${path}?ref=${BRANCH}`, "-H", "Accept: application/vnd.github.raw"]);
+const raw = (repo, path, ref = BRANCH) => gh(["api", `repos/${OWNER}/${repo}/contents/${path}?ref=${ref}`, "-H", "Accept: application/vnd.github.raw"]);
 const tryJson = async (fn) => { try { return JSON.parse(await fn()); } catch { return null; } };
 
 function parseReport(md) {
@@ -153,8 +153,26 @@ async function collectSite({ repo, name }) {
         lastCrawl: r.google?.lastCrawl || "", findings: (r.findings || []).map((f) => ({ kind: f.kind, severity: f.severity, detail: f.detail || f.message || "" })) };
     });
     site.state = { total: urls.length, ...verdict, lastDaily: state.lastDaily || null, pages };
+    site.history = await indexedHistory(repo);
   }
   return site;
+}
+
+// Indexed pages over time: state.json is committed after every daily run, so its older versions give one data point per
+// day (the newest commit of each day, up to 30 days).
+async function indexedHistory(repo) {
+  const commits = await tryJson(() => gh(["api", `repos/${OWNER}/${repo}/commits?sha=${BRANCH}&path=state.json&per_page=60`, "-q", "[.[] | {sha: .sha, at: .commit.committer.date}]"]));
+  if (!commits) return [];
+  const perDay = new Map();
+  for (const c of commits) { const day = c.at.slice(0, 10); if (!perDay.has(day)) perDay.set(day, c); } // newest first
+  const picks = [...perDay.values()].slice(0, 30);
+  const points = await Promise.all(picks.map(async (c) => {
+    const s = await tryJson(() => raw(repo, "state.json", c.sha));
+    if (!s) return null;
+    const v = Object.values(s.urls || {}).map((r) => r.google?.verdict);
+    return { at: c.at, indexed: v.filter((x) => x === "PASS").length, notIndexed: v.filter((x) => x && x !== "PASS").length, total: v.length };
+  }));
+  return points.filter(Boolean).reverse(); // oldest first
 }
 
 export async function collectSearch() {
