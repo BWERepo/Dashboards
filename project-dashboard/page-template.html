@@ -662,7 +662,7 @@ function updatePlan() {
   const cur = DATA.projects.flatMap((p) => todo(p).filter((i) => i.plan));
   if (DATA.projects.some((p) => p.loading)) return;
   const ids = new Set(cur.map((i) => i.id));
-  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, btn2: i.btn2, open: true, ticked: !!(old?.open && old.ticked && old.what === i.what) }; });
+  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, btn2: i.btn2, open: true, ticked: !!(old?.open && old.ticked && (old.what === i.what || i.id.includes("|run|"))) }; });
   for (const it of Object.values(plan)) {
     if (!ids.has(it.id) && it.open) { it.open = false; it.doneAt = now; }
     if (!it.open && now - it.doneAt > 7 * 864e5) delete plan[it.id];
