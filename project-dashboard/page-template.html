@@ -660,7 +660,7 @@ function planBlock(p) {
   const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}>${i.what}</label>
     <span class="meta">${!i.open ? "&#10003; Fixed " + short(new Date(i.doneAt).toISOString()) : i.ticked ? "Closed by you " + short(new Date(i.tickedAt || Date.now()).toISOString()) + ". Still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
   const shown = planMore[p.key] ? open : open.slice(0, PLAN_SHOW);
-  return `<div class="cplan" data-noopen><b>${open.length ? `Needs you (${open.length})` : `<span class="ok">&#10003; Nothing needs you</span>`}</b>${building ? ` <span class="meta">checking again...</span>` : ""}
+  return `<div class="cplan" data-noopen><b class="${open.length ? "warn" : ""}">${open.length ? `Needs you (${open.length})` : `<span class="ok">&#10003; Nothing needs you</span>`}</b>${building ? ` <span class="meta">checking again...</span>` : ""}
     ${shown.length ? `<ul>${shown.map(row).join("")}</ul>` : ""}
     ${open.length > PLAN_SHOW ? `<button class="ibtn" data-plan-more="${esc(p.key)}">${planMore[p.key] ? "Show fewer" : `Show ${open.length - PLAN_SHOW} more`}</button>` : ""}
     ${shut.length ? `<button class="ibtn" data-plan-closed="${esc(p.key)}">${planClosed[p.key] ? "Hide" : "Show"} ${shut.length} closed</button>${planClosed[p.key] ? `<ul>${shut.map(row).join("")}</ul>` : ""}` : ""}</div>`;
