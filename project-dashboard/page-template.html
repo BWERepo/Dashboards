@@ -560,7 +560,7 @@ function claudeCol(p) {
 const GH_TYPES = { attention: "Needs attention", all: "All activity", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
 const failedRun = (i) => i.type === "run" && /fail|cancel|timed|startup/.test(i.state || "");
 // A failure only needs attention while it is that workflow's newest run; a later green run has fixed it.
-const openFailures = (p) => { const seen = new Set(); return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); return failedRun(i); }); };
+const openFailures = (p) => { const seen = new Set(), dep = p.remote.deploys || []; return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); const d = dep.find((x) => x.workflow === wf); return failedRun(i) && !(d && deploySuperseded(dep, d)); }); };
 const openItem = (i) => (i.type === "issue" || i.type === "pr") && i.state !== "closed" && i.state !== "merged";
 function ghCol(p) {
   const r = p.remote;
@@ -785,6 +785,7 @@ $("#scards").onclick = (e) => { const c = e.target.closest("[data-sopen]"); if (
 // The newest run that deployed to a stage. A "Deploy End-to-End" workflow takes the same build through staging and then
 // production, so its run counts for both stages (the table says when it was the one used).
 const stageRun = (d, s) => d.filter((x) => x.stage === s || /end-to-end|e2e/i.test(x.workflow)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+const deploySuperseded = (d, x) => { const n = x.stage === "other" ? null : stageRun(d, x.stage); return !!n && n !== x && n.state === "success" && Date.parse(n.at) > Date.parse(x.at); };
 // Four lists across every project, worked out from each project's open PRs and its newest deploy runs.
 // Needs production = staging deployed OK and production has not caught up (or never ran). Deployed = production is current.
 function releaseLists() {
@@ -793,7 +794,9 @@ function releaseLists() {
     if (p.loading) continue;
     const k = p.key, d = p.remote.deploys || [], by = (s) => stageRun(d, s);
     for (const x of p.remote.prs) if (!x.isDraft) L.prs.push({ k, at: x.updatedAt, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}`, note: "updated " + fmt(x.updatedAt) });
-    for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, id: "err|" + k + "|" + x.workflow, sig: x.at, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
+    // A failed deploy is not an error any more once a newer run has deployed that stage successfully (a staging or production
+    // run, or an End-to-End run, which covers both).
+    for (const x of d) if (!deploySuperseded(d, x) && (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure")) L.errors.push({ k, id: "err|" + k + "|" + x.workflow, sig: x.at, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
     const st = by("staging"), pr = by("production");
     // Needs staging = GitHub has a commit newer than the newest staging run (or staging never ran).
     const commit = (p.remote.activity || []).find((i) => i.type === "commit");
