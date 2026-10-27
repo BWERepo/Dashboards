@@ -77,7 +77,8 @@ async function remote({ repo }) {
     issues: issues.map((i) => ({ number: i.number, title: i.title, url: i.url, updatedAt: i.updatedAt, labels: i.labels.map((l) => l.name), body: (i.body || "").slice(0, 4000) })),
     prs,
     activity: act,
-    deploys: runs,
+    deploys: runs.runs,
+    deployWorkflows: runs.names, // every deploy workflow, including ones that have never run
   };
 }
 
@@ -87,12 +88,13 @@ async function remote({ repo }) {
 // state is the run's conclusion, or its status while it is still running.
 async function deployRuns(r, json) {
   const workflows = await json("workflow", "list", "-R", r, "--json", "id,name,state");
-  const out = await Promise.all(workflows.filter((w) => /deploy/i.test(w.name) && w.state === "active").map(async (w) => {
+  const deployWfs = workflows.filter((w) => /deploy/i.test(w.name) && w.state === "active");
+  const out = await Promise.all(deployWfs.map(async (w) => {
     const [run] = await json("run", "list", "-R", r, "-w", String(w.id), "-L", "1", "--json", "displayTitle,workflowName,status,conclusion,createdAt,url,headBranch");
     return run && { workflow: w.name, stage: /production/i.test(w.name) ? "production" : /staging/i.test(w.name) ? "staging" : "other",
       state: run.conclusion || run.status, at: run.createdAt, url: run.url, title: run.displayTitle, branch: run.headBranch };
   }));
-  return out.filter(Boolean);
+  return { runs: out.filter(Boolean), names: deployWfs.map((w) => w.name) };
 }
 
 // One timeline of GitHub messages: issues and PRs (opened or updated), their comments, commits and Actions runs.

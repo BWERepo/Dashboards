@@ -46,6 +46,7 @@ textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid v
 #auto{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);margin-left:8px}
 .rbtn:disabled{opacity:.6;cursor:wait}
 .ibtn:disabled{opacity:.45;cursor:not-allowed}
+.acts{display:flex;gap:6px;margin:10px 0 0}.acts .gitsel{flex:1 1 0;width:auto}
 .gitsel{width:100%;min-width:0;max-width:100%;font:inherit;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer}
 .jump{cursor:pointer;border-radius:6px;padding:2px 4px;margin:-2px -4px}.jump:hover{background:var(--chip)}.jump:hover small{text-decoration:underline}
 .flash{animation:flash 1.5s}@keyframes flash{from{background:color-mix(in srgb,var(--warn) 35%,transparent)}to{background:transparent}}
@@ -294,7 +295,7 @@ function cards() {
       ${lastBlock(p)}
       ${planBlock(p)}
       ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
-      ${p.git ? gitButtons(p, c, !!(!planReady || needsYou(p) || gitBusy[p.key])) : ""}
+      ${gitButtons(p, c, !!(!planReady || needsYou(p) || gitBusy[p.key]))}
     </div>`;
   }).join("");
 }
@@ -304,27 +305,54 @@ function tabs() {
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
-$("#cards").onclick = (e) => { if (e.target.closest("[data-git],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
-$("#cards").onchange = (e) => { const s = e.target.closest("select[data-git]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
-$("#cards").onkeydown = (e) => { if (e.target.closest("[data-git],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
+$("#cards").onclick = (e) => { if (e.target.closest("[data-git],[data-deploy],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c) openProject(c.dataset.open, e.target.closest("[data-jump]")?.dataset.jump); };
+$("#cards").onchange = (e) => { const s = e.target.closest("select[data-git],select[data-deploy]"); if (s && s.value) { const act = s.value; s.value = ""; s.blur(); if (s.dataset.deploy !== undefined) deployAction(s.dataset.key, act); else gitAction(s.dataset.key, act); } }; // blur, or the "dropdown open" guard below would hold back the progress clock
+$("#cards").onkeydown = (e) => { if (e.target.closest("[data-git],[data-deploy],[data-noopen]")) return; const c = e.target.closest("[data-open]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openProject(c.dataset.open); } };
 
 // A Git dropdown on every card: Commit, Push, Commit & push, Pull, and Fix diverged (pull, then push).
 // A choice with nothing to do is greyed out with the reason.
 // Push is a plain `git push` to the upstream, never a force push, so it is off when the branch is behind or has diverged.
 // State lives here, not in the DOM, because cards() redraws every few seconds.
 const gitBusy = {}, gitNote = {};
-function gitButtons(p, c, showSelect = true) { // the dropdown is left out when nothing needs you; a result message still shows
-  const pushBlock = diverged(p) ? "diverged" : p.git.behind ? "pull first" : "";
+// A row of two dropdowns under each card: Git (left; left out when nothing needs you) and Deployments (right; for projects
+// that have deploy workflows). A result message from either shows underneath.
+function gitButtons(p, c, showSelect = true) {
   const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
-  const note = gitNote[p.key];
-  return `${showSelect ? `<div style="margin:10px 0 0"><select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
+  const note = gitNote[p.key], g = p.git, dep = p.remote?.deployWorkflows || (p.remote?.deploys || []).map((x) => x.workflow);
+  const has = (re) => dep.some((x) => re.test(x));
+  const pushBlock = g && (diverged(p) ? "diverged" : g.behind ? "pull first" : "");
+  const gitSel = g && showSelect ? `<select class="gitsel" data-git data-key="${esc(p.key)}" aria-label="Git actions for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
     <option value="">Git...</option>
     ${opt("commit", "Commit", c.uncommitted ? "" : "none")}
     ${opt("push", "Push", pushBlock || (c.unpushed ? "" : "none"))}
     ${opt("both", "Commit &amp; push", pushBlock || (c.uncommitted ? "" : "none"))}
-    ${opt("pull", "Pull", !p.git.upstream ? "no remote" : !p.git.behind ? "up to date" : c.uncommitted ? "commit first" : "")}
-    ${opt("sync", "Fix diverged", !p.git.upstream ? "no remote" : !(p.git.behind && p.git.ahead) ? "not diverged" : c.uncommitted ? "commit first" : "")}
-  </select></div>` : ""}${note?.text ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+    ${opt("pull", "Pull", !g.upstream ? "no remote" : !g.behind ? "up to date" : c.uncommitted ? "commit first" : "")}
+    ${opt("sync", "Fix diverged", !g.upstream ? "no remote" : !(g.behind && g.ahead) ? "not diverged" : c.uncommitted ? "commit first" : "")}
+  </select>` : "";
+  const depSel = has(/staging|production|end-to-end|e2e/i) ? `<select class="gitsel" data-deploy data-key="${esc(p.key)}" aria-label="Deployments for ${esc(p.key)}" ${gitBusy[p.key] ? "disabled" : ""}>
+    <option value="">Deployments...</option>
+    ${opt("staging", "Staging", has(/staging/i) ? "" : "no workflow")}
+    ${opt("production", "Production", has(/production/i) ? "" : "no workflow")}
+    ${opt("e2e", "End-to-End", has(/end-to-end|e2e/i) ? "" : "no workflow")}
+  </select>` : "";
+  return `${gitSel || depSel ? `<div class="acts">${gitSel}${depSel}</div>` : ""}${note?.text ? `<div class="note ${note.bad ? "bad" : ""}" style="white-space:pre-wrap">${esc(note.text)}</div>` : ""}`;
+}
+// Start a deploy workflow on GitHub. Asks first; the server finds the workflow and runs it on the default branch.
+async function deployAction(key, stage) {
+  const p = DATA.projects.find((x) => x.key === key), label = { staging: "Staging", production: "Production", e2e: "End-to-End" }[stage];
+  const say = (text, bad) => { gitNote[key] = { text, bad }; if (!document.activeElement?.matches?.("#cards select")) cards(); };
+  say("");
+  const what = stage === "e2e" ? "an End-to-End deployment (staging, then production)" : `a ${label} deployment`;
+  if (!confirm(`Start ${what} of ${key} on GitHub now?\n\nIt runs the project's "${label}" workflow on its main branch.${stage !== "staging" ? "\n\nThis changes the live website." : ""}`)) return;
+  if (!live) { say("This page was opened as a file, so it can't start deployments.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).", true); return; }
+  say(`Starting the ${label} deployment...`); gitBusy[key] = true; cards();
+  try {
+    const r = await fetch("/deploy/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ stage }) });
+    if (!r.ok) throw new Error(await r.text());
+    gitBusy[key] = false;
+    say(`\u2713 The ${label} deployment was started on GitHub at ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}. The card updates when it has run.`);
+    setTimeout(() => refresh(), 8000); // the new run shows up as queued/running
+  } catch (err) { gitBusy[key] = false; say(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? offline : err.message + "\nWhat to do: try again. If it keeps failing, send a screenshot of this message to Claude.", true); }
 }
 async function gitAction(key, act) {
   const p = DATA.projects.find((x) => x.key === key), g = p.git;

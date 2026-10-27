@@ -211,6 +211,31 @@ const server = createServer(async (req, res) => {
     child.stdin.end(text);
     return;
   }
+  // Start a deploy workflow on GitHub ("Run workflow", workflow_dispatch) for the project: staging, production or end-to-end.
+  const dk = req.method === "POST" && req.url.startsWith("/deploy/") ? decodeURIComponent(req.url.slice(8)) : "";
+  if (byKey(dk)?.repo) {
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
+    let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
+    const stage = String(body.stage), repo = `${OWNER}/${byKey(dk).repo}`;
+    const pick = { staging: (n) => /staging/i.test(n) && !/end-to-end|e2e/i.test(n), production: (n) => /production/i.test(n) && !/end-to-end|e2e/i.test(n), e2e: (n) => /end-to-end|e2e/i.test(n) }[stage];
+    const label = { staging: "Staging", production: "Production", e2e: "End-to-End" }[stage];
+    if (!pick) { fail(res, 400, "The dashboard sent an unknown deployment type.", "Click Refresh now and try again."); return; }
+    const ghx = (...a) => new Promise((resolve, reject) => execFile("gh", a, { windowsHide: true, timeout: 60000 }, (err, out, errOut) => (err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out.trim()))));
+    try {
+      const wfs = JSON.parse(await ghx("workflow", "list", "-R", repo, "--json", "id,name,state"));
+      const wf = wfs.find((w) => w.state === "active" && pick(w.name));
+      if (!wf) { fail(res, 404, `${byKey(dk).key} has no ${label} deployment workflow on GitHub.`, "Nothing to start. Ask Claude in that project to create the standard workflows (the /bwe-create-workflows skill)."); return; }
+      const branch = await ghx("repo", "view", repo, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name");
+      await ghx("workflow", "run", String(wf.id), "-R", repo, "--ref", branch || "main");
+      res.writeHead(200, cors).end(wf.name);
+    } catch (e) {
+      const m = String(e.message);
+      if (/workflow_dispatch/i.test(m)) fail(res, 500, `GitHub can't start the "${label}" workflow by hand, because it has no manual trigger.`, `Ask Claude in ${byKey(dk).key} to add "workflow_dispatch:" under "on:" in that workflow file, deploy that change, then try again.`, m);
+      else if (/auth|login|401|403|admin rights|resource not accessible/i.test(m)) fail(res, 500, "GitHub didn't let the dashboard start the workflow, because the gh tool isn't signed in or can't run workflows here.", "In PowerShell run: gh auth login (or gh auth refresh -s workflow), then try again.", m);
+      else fail(res, 500, `The ${label} deployment wasn't started.`, "Check the internet connection and try again. If it keeps failing, start it on GitHub from the repo's Actions tab.", m);
+    }
+    return;
+  }
   // Close an open pull request (without merging it; the branch is left alone) or an issue. Asked for by the user's button press.
   const ck = req.method === "POST" && req.url.startsWith("/gh-close/") ? decodeURIComponent(req.url.slice(10)) : "";
   if (byKey(ck)?.repo) {
