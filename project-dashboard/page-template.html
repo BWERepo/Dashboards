@@ -715,6 +715,7 @@ function fullView(p) {
       ${msgTab === "claude" ? `<div class="filters" style="margin:0 0 8px"><button data-act="tools" aria-pressed="${showTools}">Show tool steps</button></div><div>${claudeCol(p)}</div>` : `<div class="filters" style="margin:0 0 8px">${Object.entries(GH_TYPES).map(([k, n]) => `<button data-gh="${k}" aria-pressed="${ghFilter === k}">${n}</button>`).join("")}</div><div>${ghCol(p)}</div>`}
     </div>`}</div>`;
 }
+$("#full").addEventListener("toggle", (e) => { const d = e.target; if (d.dataset?.sec) d.open ? secOpen.add(d.dataset.sec) : secOpen.delete(d.dataset.sec); }, true);
 $("#full").addEventListener("click", (e) => {
   const t = e.target.closest("[data-act],[data-view],[data-gh],[data-tab]");
   if (!t) return;
@@ -728,7 +729,14 @@ $("#full").addEventListener("click", (e) => {
 });
 document.addEventListener("fullscreenchange", () => { if (tab !== "overview") render(); });
 
-function projectView(p) {
+// Sections of the Details view start collapsed; the ones you open stay open across redraws.
+const secOpen = new Set();
+function collapse(html) {
+  const [head, ...parts] = html.split("<h3");
+  return head + parts.map((x) => { const i = x.indexOf("</h3>"), h = x.slice(x.indexOf(">") + 1, i).trim(), id = h.replace(/\s*\(.*$/, ""); return `<details class="sec" data-sec="${esc(id)}" ${secOpen.has(id) ? "open" : ""}><summary><b>${h}</b></summary>${x.slice(i + 5)}</details>`; }).join("");
+}
+function projectView(p) { return collapse(projectViewFull(p)); }
+function projectViewFull(p) {
   if (p.loading) return `<div class="empty">This project's data is still loading. It appears here by itself.</div>`;
   if (p.error) return `<div class="empty bad">${esc(folderProblem(p)[0])}<br><b>What to do:</b> ${esc(folderProblem(p)[1])}<div class="meta">${esc(p.error)}</div></div>`;
   const g = p.git, r = p.remote;
