@@ -184,7 +184,7 @@ async function refresh() {
 }
 // Refresh now also clears the checked-off actions (ticked by you, or fixed); the list is then rebuilt from the new data,
 // so a ticked item that is still a problem comes back unticked.
-$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); drawPlan(); refresh(); };
+$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); for (const id of Object.keys(DISM)) delete DISM[id]; saveDism(); drawPlan(); drawLists(); refresh(); };
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
@@ -790,23 +790,38 @@ function releaseLists() {
     if (p.loading) continue;
     const k = p.key, d = p.remote.deploys || [], by = (s) => d.filter((x) => x.stage === s).sort((a, b) => t(b.at) - t(a.at))[0];
     for (const x of p.remote.prs) if (!x.isDraft) L.prs.push({ k, at: x.updatedAt, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}`, note: "updated " + fmt(x.updatedAt) });
-    for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
+    for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, id: "err|" + k + "|" + x.workflow, sig: x.at, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
     const st = by("staging"), pr = by("production");
     // Needs staging = GitHub has a commit newer than the newest staging run (or staging never ran).
     const commit = (p.remote.activity || []).find((i) => i.type === "commit");
-    if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
-    if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
+    if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, id: "stg|" + k, sig: commit.at + "|" + st.at, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
+    if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, id: "prod|" + k, sig: st.at + "|" + (pr?.at || ""), at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
     else if (pr?.state === "success") L.ok.push({ k, at: pr.at, html: `<a href="${esc(pr.url)}" target="_blank" rel="noopener">Production deployed</a>`, note: fmt(pr.at) });
   }
   return L;
 }
+// Entries in the error / staging / production lists can be closed (dismissed). A closed entry stays closed while the run or
+// commit it is about is unchanged, and comes back when something newer happens. Refresh now clears them all.
+const DISM_KEY = "projdash-closed";
+let DISM = (() => { try { return JSON.parse(localStorage.getItem(DISM_KEY)) || {}; } catch { return {}; } })();
+const saveDism = () => { try { localStorage.setItem(DISM_KEY, JSON.stringify(DISM)); } catch {} };
+const showClosed = {};
 function drawLists() {
   const el = $("#lists");
   if (!planReady) { el.innerHTML = ""; return; } // shown once every project has loaded, like the actions
   const L = releaseLists();
-  const box = (title, arr, empty, cls) => `<div class="box"><h3>${title} <span class="pill ${arr.length ? cls : "ok"}">${arr.length}</span></h3>${arr.length ? `<ul>${arr.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((i) => `<li><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span>: ${i.html} <span class="meta">${i.note}</span></li>`).join("")}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
-  el.innerHTML = `<div class="lists">${box("PRs to merge", L.prs, "No open pull requests.", "warn")}${box("Deployment errors", L.errors, "No failed deployments.", "bad")}${box("Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn")}${box("Needs production deployment", L.needs, "Production is up to date everywhere.", "warn")}${box("Successfully deployed", L.ok, "No production deployments found.", "ok")}</div>`;
+  for (const id of Object.keys(DISM)) if (![...L.errors, ...L.staging, ...L.needs].some((i) => i.id === id && i.sig === DISM[id].sig)) delete DISM[id]; // changed or gone
+  saveDism();
+  const box = (name, title, arr, empty, cls, closable) => {
+    const isClosed = (i) => closable && DISM[i.id]?.sig === i.sig, shut = arr.filter(isClosed), open = arr.filter((i) => !isClosed(i));
+    const li = (i, closed) => `<li class="${closed ? "done" : ""}">${closable ? `<input type="checkbox" data-lclose="${esc(i.id)}" data-sig="${esc(i.sig)}" ${closed ? "checked" : ""} title="${closed ? "Closed. Untick to restore it" : "Close this entry"}"> ` : ""}<span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span>: ${i.html} <span class="meta">${i.note}${closed ? " · closed " + fmt(new Date(DISM[i.id].at).toISOString()) : ""}</span></li>`;
+    const sorted = (a) => a.sort((x, y) => Date.parse(y.at) - Date.parse(x.at));
+    return `<div class="box"><h3>${title} <span class="pill ${open.length ? cls : "ok"}">${open.length}</span>${shut.length ? ` <button class="ibtn" style="padding:0 8px;font-size:12px" data-lshow="${name}">${showClosed[name] ? "Hide" : "Show"} ${shut.length} closed</button>` : ""}</h3>${open.length || (showClosed[name] && shut.length) ? `<ul>${sorted(open).map((i) => li(i, false)).join("")}${showClosed[name] ? sorted(shut).map((i) => li(i, true)).join("") : ""}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
+  };
+  el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${box("ok", "Successfully deployed", L.ok, "No production deployments found.", "ok")}</div>`;
 }
+$("#lists").addEventListener("change", (e) => { const id = e.target.dataset?.lclose; if (!id) return; if (e.target.checked) DISM[id] = { sig: e.target.dataset.sig, at: Date.now() }; else delete DISM[id]; saveDism(); drawLists(); });
+$("#lists").addEventListener("click", (e) => { const n = e.target.closest("[data-lshow]")?.dataset.lshow; if (n) { showClosed[n] = !showClosed[n]; drawLists(); } });
 $("#lists").onclick = (e) => { const k = e.target.closest("[data-lopen]")?.dataset.lopen; if (!k) return; const g = groupOf(k); if (g && g !== group) setGroup(g); openProject(k); };
 
 // The section bar. Each section shows how many things need you.
