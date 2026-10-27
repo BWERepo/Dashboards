@@ -294,7 +294,7 @@ function cards() {
       ${lastBlock(p)}
       ${planBlock(p)}
       ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
-      ${p.git ? gitButtons(p, c) : ""}
+      ${p.git && (!planReady || needsYou(p) || gitBusy[p.key] || gitNote[p.key]?.text) ? gitButtons(p, c) : ""}
     </div>`;
   }).join("");
 }
@@ -647,6 +647,8 @@ function updatePlan() {
 // Recommended actions live in each project's card: what needs doing there, a checkbox to close each, and a button for the fix.
 // Ticking closes an action (it leaves the list, and waits under "closed"); Refresh now clears the closed ones.
 const PLAN_SHOW = 4, planMore = {}, planClosed = {};
+// Does the project have any open, unticked action? When nothing needs you the Git dropdown is not shown.
+const needsYou = (p) => Object.values(plan).some((i) => i.key === p.key && i.open && !i.ticked);
 function planBlock(p) {
   if (!planReady) return building ? `<div class="cplan meta">Checking what needs you...</div>` : "";
   const all = Object.values(plan).filter((i) => i.key === p.key), open = all.filter((i) => i.open && !i.ticked).sort((a, b) => a.pri - b.pri || a.order - b.order),
