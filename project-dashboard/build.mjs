@@ -66,17 +66,19 @@ async function remote({ repo }) {
   if (!repo) return { url: null, issues: [], prs: [], activity: [] };
   const r = `${OWNER}/${repo}`;
   const json = (...args) => attempt(async () => JSON.parse(await gh(...args)), []);
-  const [issues, prs, act, runs] = await Promise.all([
+  const [issues, prs, act, runs, hist] = await Promise.all([
     json("issue", "list", "-R", r, "--state", "open", "-L", "50", "--json", "number,title,url,updatedAt,body,labels"),
     json("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt"),
     activity(r, json),
     deployRuns(r, json),
+    json("pr", "list", "-R", r, "--state", "all", "-L", "100", "--json", "number,title,url,state,isDraft,updatedAt,mergedAt"), // for the Pull requests card's date filter
   ]);
   return {
     url: `https://github.com/${r}`,
     issues: issues.map((i) => ({ number: i.number, title: i.title, url: i.url, updatedAt: i.updatedAt, labels: i.labels.map((l) => l.name), body: (i.body || "").slice(0, 4000) })),
     prs,
     activity: act,
+    prHistory: hist.map((p) => ({ number: p.number, title: p.title, url: p.url, state: p.isDraft && p.state === "OPEN" ? "draft" : p.state.toLowerCase(), at: p.updatedAt, merged: p.mergedAt })),
     deploys: runs.runs,
     deployWorkflows: runs.names, // every deploy workflow, including ones that have never run
   };
