@@ -796,7 +796,8 @@ function releaseLists() {
     const commit = (p.remote.activity || []).find((i) => i.type === "commit");
     if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, id: "stg|" + k, sig: commit.at + "|" + st.at, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
     if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, id: "prod|" + k, sig: st.at + "|" + (pr?.at || ""), at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
-    else if (pr?.state === "success") L.ok.push({ k, at: pr.at, html: `<a href="${esc(pr.url)}" target="_blank" rel="noopener">Production deployed</a>`, note: fmt(pr.at) });
+    // Every project whose newest production deploy succeeded is listed, even when a newer staging deploy is waiting.
+    if (pr?.state === "success") L.ok.push({ k, at: pr.at, html: `<a href="${esc(pr.url)}" target="_blank" rel="noopener">Production deployed</a>`, note: fmt(pr.at) + (st?.state === "success" && t(st.at) > t(pr.at) ? " · newer staging deploy waiting" : "") });
   }
   return L;
 }
