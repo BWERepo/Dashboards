@@ -14,7 +14,7 @@ const PORT = 8788;
 // The data is collected by build.mjs, which prints each project as it finishes ("@@project {json}"). Those are kept
 // here so the page can show every project as soon as it arrives (GET /progress) instead of waiting for all of them.
 // A build asked for while one is running is queued (once), so it still picks up the newest state.
-const progress = { run: 0, running: false, seq: 0, done: 0, total: PROJECTS.length, projects: {}, startedAt: null, generatedAt: null, error: null };
+const progress = { run: 0, running: false, seq: 0, done: 0, total: PROJECTS.length + 1, projects: {}, search: null, startedAt: null, generatedAt: null, error: null };
 let current = null, queued = null;
 function build() {
   if (!current) return (current = runBuild().finally(() => { current = null; }));
@@ -28,7 +28,10 @@ function runBuild() {
     let buf = "", errOut = "", ended = false;
     child.stdout.on("data", (d) => {
       buf += d; const lines = buf.split("\n"); buf = lines.pop();
-      for (const l of lines) if (l.startsWith("@@project ")) try {
+      for (const l of lines) if (l.startsWith("@@search ")) try {
+        progress.search = { ...JSON.parse(l.slice(9).trim()), run, seq: ++progress.seq }; progress.done++;
+      } catch {}
+      else if (l.startsWith("@@project ")) try {
         const p = JSON.parse(l.slice(10).trim());
         progress.projects[p.key] = { ...p, run, seq: ++progress.seq }; progress.done++;
       } catch {}
@@ -47,7 +50,7 @@ function runBuild() {
 // The page is always served fresh from the template with every card "loading"; the data then arrives from /progress.
 // (index.html, written by build.mjs, is only the saved copy, so an old one can never show an old dashboard.)
 const blankPage = () => readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify({ generatedAt: null,
-  projects: PROJECTS.map((p) => ({ key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null, loading: true, remote: { url: null, issues: [], prs: [], activity: [] }, sessions: [] })) }).replace(/</g, "\\u003c"));
+  projects: PROJECTS.map((p) => ({ key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null, group: p.group, loading: true, remote: { url: null, issues: [], prs: [], activity: [] }, sessions: [] })) }).replace(/</g, "\\u003c"));
 
 // Checkpoints, and replies to a project's Claude Code sessions, run headless (no window) as `claude -p` with
 // stream-json output, one job per project; progress is kept here and
@@ -208,6 +211,24 @@ const server = createServer(async (req, res) => {
     child.stdin.end(text);
     return;
   }
+  // Close an open pull request (without merging it; the branch is left alone) or an issue. Asked for by the user's button press.
+  const ck = req.method === "POST" && req.url.startsWith("/gh-close/") ? decodeURIComponent(req.url.slice(10)) : "";
+  if (byKey(ck)?.repo) {
+    if (!ownPage(req)) { fail(res, 403, ...NOT_OWN_PAGE); return; }
+    let body = {}; try { body = JSON.parse(await readBody(req)); } catch {}
+    const num = Number(body.number), kind = body.kind === "issue" ? "issue" : "pr", noun = kind === "issue" ? "issue" : "pull request";
+    if (!Number.isInteger(num) || num < 1) { fail(res, 400, `The dashboard didn't say which ${noun} to close.`, "Click Refresh now and try again."); return; }
+    execFile("gh", [kind, "close", String(num), "-R", `${OWNER}/${byKey(ck).repo}`], { windowsHide: true }, (err, out, errOut) => {
+      const m = String(errOut || err?.message || "");
+      if (err && !/already closed/i.test(m)) {
+        if (/auth|login|401|403/i.test(m)) fail(res, 500, `GitHub didn't let the dashboard close the ${noun} because the gh tool isn't signed in.`, "In PowerShell run: gh auth login, sign in, then try again.", m);
+        else fail(res, 500, `The ${noun} wasn't closed.`, "Check the internet connection and try again. If it keeps failing, close it on GitHub with its Open on GitHub button.", m);
+        return;
+      }
+      res.writeHead(200, cors).end("closed");
+    });
+    return;
+  }
   // Commit everything that is changed, push the current branch, or both. Push is a plain push (never forced): if the
   // remote has moved on, git refuses and says why. Files that look like secrets are never committed.
   const gk2 = req.method === "POST" && req.url.startsWith("/git/") ? decodeURIComponent(req.url.slice(5)) : "";
@@ -269,9 +290,9 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === "GET" && req.url.startsWith("/progress")) {
     const since = Number(new URL(req.url, "http://x").searchParams.get("since")) || 0;
-    const { projects, ...rest } = progress;
+    const { projects, search, ...rest } = progress;
     res.writeHead(200, { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" })
-      .end(JSON.stringify({ ...rest, queued: !!queued, projects: Object.values(projects).filter((p) => p.seq > since) }));
+      .end(JSON.stringify({ ...rest, queued: !!queued, projects: Object.values(projects).filter((p) => p.seq > since), search: search && search.seq > since ? search : null }));
     return;
   }
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {

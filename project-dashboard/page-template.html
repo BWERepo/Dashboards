@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Status Dashboard</title>
+<title>BWE Dashboard</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#16191d;--mute:#5d6672;--line:#e1e5ea;--ok:#157347;--warn:#b26a00;--bad:#b3261e;--accent:#1a56db;--chip:#eef1f5}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--ink:#e8ebef;--mute:#98a2ae;--line:#2a3039;--ok:#4cc38a;--warn:#e0a03a;--bad:#f2766d;--accent:#7aa2ff;--chip:#222831}}
@@ -15,6 +15,7 @@ h1{font-size:22px;margin:0}
 main{max-width:1500px;margin:0 auto;padding:8px 16px 48px}
 .top{display:flex;gap:14px;align-items:flex-start;margin:12px 0 20px}.top .grid{flex:1;min-width:0;margin:0}.top #plan{flex:0 0 400px;position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto}.top #plan .plan{margin:0}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px}
+#cards.grid{grid-template-columns:repeat(3,minmax(0,1fr))}@media (max-width:700px){#cards.grid{grid-template-columns:1fr}}
 .grid .card{padding:9px 11px}.grid .card .sub{font-size:12px}.grid .big{font-size:17px}.grid .card{overflow-wrap:break-word}.grid .card h2{overflow-wrap:anywhere;font-size:15px}.grid .row{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin-top:6px}.grid .row b{display:inline;margin-right:5px}.grid .row small{display:inline;white-space:nowrap}.grid .row b{font-size:15px}.grid .row small{font-size:11px}.grid .row div{min-width:0}.grid .gitsel{padding:3px 6px;font-size:13px}
 @media (max-width:1000px){.top{flex-direction:column}.top #plan{flex:none;width:100%;position:static;max-height:none}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
@@ -101,6 +102,11 @@ body.locked{overflow:hidden}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin.sm{display:inline-block;vertical-align:-2px;width:11px;height:11px;margin:0 2px 0 0;border-width:2px}
 .attn{margin:12px 16px 0;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+#groups{margin:6px 0 4px}#groups button{font-size:16px;padding:8px 22px}#groups .gn{margin-left:8px;font-size:12px;padding:0 7px;border-radius:99px;background:var(--chip);color:var(--ink)}#groups button[aria-pressed=true] .gn{background:#fff3;color:#fff}
+.spark{display:flex;align-items:flex-end;gap:3px;height:40px;margin-top:10px}.spark i{flex:1;min-width:4px;background:var(--accent);opacity:.75;border-radius:2px 2px 0 0}
+.stools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.stools input,.stools select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}.stools input{flex:1;min-width:200px}
+td.url{word-break:break-all}.tbl{overflow-x:auto}
+.lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:0 0 20px}.lists .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.lists h3{margin:0 0 6px;font-size:15px}.lists ul{list-style:none;margin:0;padding:0}.lists li{padding:5px 0;border-top:1px solid var(--line);font-size:14px}.lists li:first-child{border-top:0}.lists .k{font-weight:600;cursor:pointer}
 .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
 .plan ol{margin:8px 0 0;padding-left:22px}.plan li{margin:6px 0}.plan li label{cursor:pointer}.plan li .meta{margin-left:6px}.plan li .ibtn{margin-left:8px;padding:2px 10px;font-size:13px}
 .plan li.done label{text-decoration:line-through;color:var(--mute)}.plan input{margin:0 6px 0 0;vertical-align:-2px}
@@ -109,13 +115,22 @@ body.locked{overflow:hidden}
 </head>
 <body>
 <header>
-  <h1>Project Status Dashboard</h1>
+  <h1>BWE Dashboard</h1>
   <div class="sub" id="gen"></div>
 </header>
 <main>
+  <nav id="groups" aria-label="Dashboard sections"></nav>
+  <div id="gProjects">
   <div class="top"><div class="grid" id="cards"></div><section id="plan" aria-label="Recommended actions"></section></div>
   <nav id="tabs"></nav>
   <section id="detail"></section>
+  <section id="lists"></section>
+  </div>
+  <div id="gGoogle" hidden>
+    <div class="grid" id="scards"></div>
+    <nav id="stabs"></nav>
+    <section id="sdetail"></section>
+  </div>
 </main>
 <div id="full" class="full" role="dialog" aria-modal="true" aria-labelledby="ftitle" hidden></div>
 <script>
@@ -133,6 +148,12 @@ const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { month: "short", da
 const md = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
 // The open project is kept in the address (#p=KEY) so a reload comes back to it.
 let tab = (() => { const k = decodeURIComponent((location.hash.match(/^#p=(.+)$/) || [])[1] || ""); return DATA.projects.some((p) => p.key === k) ? k : "overview"; })();
+// The dashboard's sections: the project groups (Websites, Utilities) and Google (the search monitor).
+const GROUPS = [["websites", "Websites"], ["utilities", "Utilities"], ["google", "Google"]];
+const GROUP_KEY = "projdash-group";
+let group = (() => { const k = tab !== "overview" && DATA.projects.find((p) => p.key === tab)?.group; if (k) return k; try { const g = localStorage.getItem(GROUP_KEY); return GROUPS.some(([x]) => x === g) ? g : "websites"; } catch { return "websites"; } })();
+const inGroup = () => DATA.projects.filter((p) => p.group === group);
+const groupOf = (key) => DATA.projects.find((p) => p.key === key)?.group;
 let view = "messages", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
@@ -161,7 +182,9 @@ async function refresh() {
     stamp(/failed to fetch|networkerror/i.test(err.message) ? offline : /What to do:/.test(err.message) ? err.message : "Refresh failed: " + err.message + "\nWhat to do: click Refresh now again; if it keeps failing, send a screenshot to Claude.");
   }
 }
-$("#refresh").onclick = () => refresh();
+// Refresh now also clears the checked-off actions (ticked by you, or fixed); the list is then rebuilt from the new data,
+// so a ticked item that is still a problem comes back unticked.
+$("#refresh").onclick = () => { for (const it of Object.values(plan)) if (!it.open || it.ticked) delete plan[it.id]; savePlan(); drawPlan(); refresh(); };
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
@@ -177,7 +200,7 @@ const waitFor = (key, run) => new Promise((resolve) => waiters.push({ key, run, 
 function redraw(keys) {
   if (!document.activeElement?.matches?.("#cards select")) cards(); // a redraw would close an open dropdown
   $("#detail").innerHTML = overview();
-  drawPlan();
+  drawPlan(); drawLists(); groupsNav();
   if (tab !== "overview" && keys.includes(tab)) render();
 }
 function watchBuild() {
@@ -196,6 +219,7 @@ function watchBuild() {
         if (np.run === pr.run) fresh.add(np.key);
         for (const w of waiters.filter((w) => w.key === np.key && np.run >= w.run)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(); }
       }
+      if (pr.search) { DATA.search = pr.search; sRender(); groupsNav(); }
       building = pr.running || pr.queued; doneCount = pr.done;
       if (building) { stamp(`Updating... ${pr.done} of ${pr.total} projects loaded.`); if (keys.length || !planReady) redraw(keys); await sleep(1000); continue; }
       if (pr.generatedAt) DATA.generatedAt = pr.generatedAt;
@@ -236,7 +260,7 @@ function status(p) {
 }
 
 function cards() {
-  $("#cards").innerHTML = DATA.projects.map((p) => {
+  $("#cards").innerHTML = inGroup().map((p) => {
     const [label, cls] = status(p), c = counts(p);
     if (p.loading) return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Collecting git, GitHub and Claude data for this project.</div></div>`;
     const upd = building && !fresh.has(p.key) ? `<span class="pill"><span class="spin sm" aria-hidden="true"></span> Updating</span>` : "";
@@ -254,7 +278,7 @@ function cards() {
 }
 
 function tabs() {
-  const items = [["overview", "Overview"], ...DATA.projects.map((p) => [p.key, p.key])];
+  const items = [["overview", "Overview"], ...inGroup().map((p) => [p.key, p.key])];
   $("#tabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${tab === k}" data-k="${k}">${esc(n)}</button>`).join("");
   $("#tabs").onclick = (e) => { const k = e.target.dataset.k; if (k) openProject(k); };
 }
@@ -333,11 +357,11 @@ function focusView(p) {
     body = r.prs.map((x) => { const f = full(x.number); return card(`#${x.number} ${esc(x.title)}${x.isDraft ? ` <span class="pill">draft</span>` : ""}`,
       `${esc(f?.author || "")}${f?.created ? " · opened " + fmt(f.created) : ""} · updated ${ago(x.updatedAt)}`, short(f?.body),
       x.isDraft ? "It's a draft, so it's still being worked on. Nothing to do yet." : "Open it on GitHub, check the changes, then press <b>Merge</b> if it looks right, or <b>Close</b> it if it's no longer needed.",
-      gh(x.url, "Open on GitHub")); }).join("") || `<div class="empty">No open pull requests. Nothing to do.</div>`;
+      gh(x.url, "Open on GitHub") + ` <button class="ibtn" data-close-pr="${x.number}" data-key="${esc(p.key)}">Close PR #${x.number}</button>`); }).join("") || `<div class="empty">No open pull requests. Nothing to do.</div>`;
   } else if (focusKind === "issues") {
     head = `Open issues (${r.issues.length})`;
     body = r.issues.map((i) => card(`#${i.number} ${esc(i.title)}`, `updated ${ago(i.updatedAt)}${i.labels.length ? " · " + i.labels.map(esc).join(", ") : ""}`, short(i.body),
-      "Read it on GitHub. If it still matters, ask Claude in this project to fix it; if not, close it.", gh(i.url, "Open on GitHub"))).join("") || `<div class="empty">No open issues. Nothing to do.</div>`;
+      "Read it on GitHub. If it still matters, ask Claude in this project to fix it; if not, close it.", gh(i.url, "Open on GitHub") + ` <button class="ibtn" data-close-issue="${i.number}" data-key="${esc(p.key)}">Close issue #${i.number}</button>`)).join("") || `<div class="empty">No open issues. Nothing to do.</div>`;
   } else if (focusKind === "commit") {
     head = `Changed files not committed (${g?.files.length || 0})`;
     body = g?.files.length ? card(`${g.files.length} file(s)`, "", g.files.slice(0, 30).map((f) => `- \`${f.path}\` (${f.kind})`).join("\n") + (g.files.length > 30 ? `\n- and ${g.files.length - 30} more` : ""),
@@ -365,8 +389,8 @@ function describe(p) {
   return (commits ? `<div class="meta">Commits</div><ul class="items">${commits}</ul>` : "") + (files ? `<div class="meta">Changed files</div><ul class="items">${files}</ul>` : "") || "-";
 }
 function overview() {
-  const commit = DATA.projects.filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
-  const issues = DATA.projects.flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
+  const commit = inGroup().filter((p) => p.git && (p.git.files.length || p.git.unpushed.length));
+  const issues = inGroup().flatMap((p) => [...p.remote.issues.map((i) => ({ p, t: "Issue", ...i })), ...p.remote.prs.map((i) => ({ p, t: i.isDraft ? "Draft PR" : "PR", ...i }))]);
   return `<h3>Items to commit</h3>` + (commit.length ? `<div class="tbl"><table><tr><th>Project</th><th>Branch</th><th>PR</th><th>Description</th><th>Uncommitted files</th><th>Unpushed commits</th></tr>
     ${commit.map((p) => `<tr><td>${esc(p.key)}</td><td>${esc(p.git.branch)}</td><td>${prCell(p.branchPr)}</td><td>${describe(p)}</td><td>${p.git.files.length}</td><td>${diverged(p) ? `diverged (+${p.git.ahead}/-${p.git.behind})` : p.git.unpushed.length}</td></tr>`).join("")}</table></div>` : `<div class="empty">Everything is committed and pushed.</div>`) +
     `<h3>Open issues and pull requests</h3>` + (issues.length ? `<div class="tbl"><table><tr><th>Project</th><th>Type</th><th>Title</th><th>Updated</th></tr>
@@ -557,7 +581,7 @@ function ghCol(p) {
 // after the fix is ticked off.
 function todo(p) {
   const g = p.git, c = counts(p), items = [], k = p.key;
-  const add = (pri, cls, id, what, todo, btn, plan = true) => items.push({ id: k + "|" + id, key: k, pri, cls, what, todo, btn, plan });
+  const add = (pri, cls, id, what, todo, btn, plan = true, btn2 = null) => items.push({ id: k + "|" + id, key: k, pri, cls, what, todo, btn, plan, btn2 });
   if (p.loading) return [];
   const n = JOBS[k]?.status === "running" ? 0 : asking(p).length;
   if (JOBS[k]?.status === "running") add(9, "warn", "running", "Claude is working on this project right now.", "Wait for it to finish; the page updates by itself.", null, false);
@@ -570,8 +594,8 @@ function todo(p) {
     else if (c.unpushed) add(4, "warn", "push", `${c.unpushed} commit(s) not pushed to GitHub.`, "Push them.", { label: "Push", git: "push" });
   }
   for (const i of openFailures(p).slice(0, 3)) add(1, "bad", "run|" + i.title.split(": ")[0], `Action failed: <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a> (${fmt(i.at)})`, "Open it to see why, then ask Claude in this project to fix it.", { label: "See why", url: i.url });
-  for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft);
-  for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" });
+  for (const x of p.remote.prs) add(x.isDraft ? 8 : 5, "warn", "pr|" + x.number, `${x.isDraft ? "Draft PR" : "PR"} <a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> waiting: ${esc(x.title)}`, x.isDraft ? "Still being worked on. Nothing to do yet." : "Review and merge it, or close it.", x.isDraft ? null : { label: "Review", open: "prs" }, !x.isDraft, { number: x.number });
+  for (const i of p.remote.issues) add(6, "warn", "issue|" + i.number, `Issue <a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a>: ${esc(i.title)}`, "Read it; ask Claude in this project to fix it, or close it if it no longer matters.", { label: "Read", open: "issues" }, true, { number: i.number, issue: true });
   return items.sort((a, b) => a.pri - b.pri);
 }
 // The short answer to "what needs me here?" at the top of a project.
@@ -592,7 +616,7 @@ function updatePlan() {
   const cur = DATA.projects.flatMap((p) => todo(p).filter((i) => i.plan));
   if (DATA.projects.some((p) => p.loading)) return;
   const ids = new Set(cur.map((i) => i.id));
-  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, open: true, ticked: !!(old?.open && old.ticked) }; });
+  cur.forEach((i, n) => { const old = plan[i.id]; plan[i.id] = { id: i.id, key: i.key, pri: i.pri, order: order.indexOf(i.key) * 1000 + n, what: i.what, todo: i.todo, btn: i.btn, btn2: i.btn2, open: true, ticked: !!(old?.open && old.ticked) }; });
   for (const it of Object.values(plan)) {
     if (!ids.has(it.id) && it.open) { it.open = false; it.doneAt = now; }
     if (!it.open && now - it.doneAt > 7 * 864e5) delete plan[it.id];
@@ -601,12 +625,13 @@ function updatePlan() {
 }
 function drawPlan() {
   const el = $("#plan");
-  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${doneCount} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
-  const all = Object.values(plan), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
+  if (!planReady) { el.innerHTML = `<div class="plan"><b>Recommended actions</b> <span class="meta">The list appears when every project has loaded${building ? ` (${Math.min(doneCount, DATA.projects.length)} of ${DATA.projects.length} so far)` : ""}.</span></div>`; return; }
+  const all = Object.values(plan).filter((i) => groupOf(i.key) === group), open = all.filter((i) => i.open).sort((a, b) => a.pri - b.pri || a.order - b.order), done = all.filter((i) => !i.open).sort((a, b) => b.doneAt - a.doneAt);
   const left = open.filter((i) => !i.ticked).length;
-  const button = (i) => !i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
+  const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
+  const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
-    : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`;
+    : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
   const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}><b>${esc(i.key)}</b>: ${i.what}</label>
     <span class="meta">${!i.open ? "&#10003; Fixed " + fmt(new Date(i.doneAt).toISOString()) : i.ticked ? "Ticked by you. It's still in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
   el.innerHTML = `<div class="plan"><div class="tools" style="margin:0;justify-content:space-between"><div><b>Recommended actions</b> <span class="meta">${open.length ? `${left} of ${open.length} still to do` : "All done"}${done.length ? ` · ${done.length} fixed` : ""}${building ? " · checking again..." : ""}</span></div>${done.length ? `<button class="ibtn" data-plan-clear>Clear fixed</button>` : ""}</div>
@@ -682,8 +707,142 @@ function render() {
   if (focus >= 0) full.querySelectorAll("textarea")[focus]?.focus();
   fetchSummaries(p);
 }
-cards(); tabs(); render();
-if (live) poll().then(watchBuild); else { updatePlan(); drawPlan(); } // a file copy shows the data it was saved with
+
+// ---- Google: the search monitor (daily and weekly reports for each site), from search-monitor-data on GitHub.
+let sTab = "overview";
+const sView = {};
+const host = (u) => { try { return new URL(u).pathname || "/"; } catch { return u; } };
+const SITES = () => DATA.search?.sites || [];
+function sStatus(s) {
+  if (!s.setUp) return ["Not set up", "warn"];
+  if (s.lastRun && s.lastRun.conclusion !== "success") return ["Last run " + (s.lastRun.conclusion || "running"), "bad"];
+  const open = s.daily[0]?.open;
+  if (open) return [open + " open findings", "warn"];
+  return s.state && s.state.unknown === s.state.total ? ["No Google data yet", "warn"] : ["Healthy", "ok"];
+}
+function sCards() {
+  const el = $("#scards");
+  if (!DATA.search) { el.innerHTML = `<div class="card"><h2>Search monitor</h2><div class="big"><span class="spin sm" aria-hidden="true"></span> Loading...</div><div class="sub">Reading the latest reports from GitHub.</div></div>`; return; }
+  if (DATA.search.failed) { el.innerHTML = `<div class="empty bad" style="grid-column:1/-1">The search monitor reports couldn't be read from GitHub.<br><b>What to do:</b> make sure the gh tool is signed in (in PowerShell: gh auth status), then click Refresh now.</div>`; return; }
+  el.innerHTML = SITES().map((s) => {
+    const [label, cls] = sStatus(s), st = s.state, d = s.daily[0];
+    const hist = s.daily.slice(0, 14).reverse().filter((r) => r.open != null), max = Math.max(1, ...hist.map((r) => r.open));
+    return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
+      <div class="big ${cls}">${esc(label)}</div>
+      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) : "Daily workflow not found in " + esc(s.repo)}</div>
+      ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
+      ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+function sTabs() {
+  const items = [["overview", "Overview"], ...SITES().map((s) => [s.repo, s.name])];
+  $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
+}
+function sOverview() {
+  const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
+  const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
+  return `<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
+    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
+    `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
+}
+function sSiteView(s) {
+  if (!s.setUp) return `<div class="empty"><b>${esc(s.name)}</b> has no search monitor yet.<br><b>What to do:</b> run <code>/bwe-create-search-monitor-workflows</code> in the <code>${esc(s.repo)}</code> repo, then click Refresh now.</div>`;
+  const f = sView[s.repo] ||= { q: "", kind: "", verdict: "" };
+  const pages = s.state?.pages || [];
+  const kinds = [...new Set(pages.flatMap((x) => x.findings.map((y) => y.kind)))].sort();
+  const list = pages.filter((x) => (!f.q || x.url.toLowerCase().includes(f.q.toLowerCase())) &&
+    (!f.kind || x.findings.some((y) => y.kind === f.kind)) && (!f.verdict || (f.verdict === "ok" ? x.verdict === "PASS" : x.verdict !== "PASS")))
+    .sort((a, b) => (b.findings.length - a.findings.length) || a.url.localeCompare(b.url));
+  const d = s.daily[0];
+  return `<div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
+  <h3>Pages (${list.length} of ${pages.length})</h3>
+  <div class="stools"><input id="sq" placeholder="Filter by URL" value="${esc(f.q)}">
+    <select id="sk"><option value="">All findings</option>${kinds.map((k) => `<option ${f.kind === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
+    <select id="sv"><option value="">All pages</option><option value="ok" ${f.verdict === "ok" ? "selected" : ""}>Indexed</option><option value="no" ${f.verdict === "no" ? "selected" : ""}>Not indexed / unknown</option></select></div>
+  <div class="tbl"><table><tr><th>Page</th><th>Google</th><th>Last crawl</th><th>Findings</th></tr>
+  ${list.slice(0, 300).map((x) => `<tr><td class="url"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(host(x.url))}</a></td>
+    <td class="${x.verdict === "PASS" ? "ok" : "bad"}">${esc(x.coverage || x.verdict || "Not inspected")}</td><td>${x.lastCrawl ? x.lastCrawl.slice(0, 10) : "-"}</td>
+    <td>${x.findings.map((y) => `<span class="pill ${y.severity === "high" ? "bad" : "warn"}" title="${esc(y.detail)}">${esc(y.kind)}</span>`).join(" ") || "-"}</td></tr>`).join("")}</table></div>
+  ${list.length > 300 ? `<div class="sub">Showing first 300. Use the filters.</div>` : ""}
+  <h3>Daily reports</h3>${s.daily.map((r, i) => `<details ${i === 0 ? "open" : ""}><summary>${r.date} · ${r.open ?? "-"} open findings · ${r.checked ?? "-"} checked</summary><pre>${esc(r.md)}</pre></details>`).join("") || `<div class="empty">No daily reports yet.</div>`}
+  <h3>Weekly reports</h3>${s.weekly.map((r) => `<details><summary>${r.date}</summary><pre>${esc(r.md)}</pre></details>`).join("") || `<div class="empty">No weekly report yet. It posts Mondays.</div>`}`;
+}
+function sRender() {
+  sCards(); sTabs();
+  const s = SITES().find((x) => x.repo === sTab);
+  $("#sdetail").innerHTML = !DATA.search ? "" : s ? sSiteView(s) : sOverview();
+  if (!s || !s.setUp) return;
+  const f = sView[s.repo], on = (id, key) => { const el = $(id); if (el) el.oninput = () => { f[key] = el.value; const pos = el.selectionStart; sRender(); const n = $(id); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} }; };
+  on("#sq", "q"); on("#sk", "kind"); on("#sv", "verdict");
+}
+$("#stabs").onclick = (e) => { const k = e.target.dataset.k; if (k) { sTab = k; sRender(); } };
+$("#scards").onclick = (e) => { const c = e.target.closest("[data-sopen]"); if (c) { sTab = c.dataset.sopen; sRender(); $("#stabs").scrollIntoView({ block: "nearest" }); } };
+
+// Four lists across every project, worked out from each project's open PRs and its newest deploy runs.
+// Needs production = staging deployed OK and production has not caught up (or never ran). Deployed = production is current.
+function releaseLists() {
+  const L = { prs: [], errors: [], staging: [], needs: [], ok: [] }, t = (d) => Date.parse(d) || 0;
+  for (const p of DATA.projects) {
+    if (p.loading) continue;
+    const k = p.key, d = p.remote.deploys || [], by = (s) => d.filter((x) => x.stage === s).sort((a, b) => t(b.at) - t(a.at))[0];
+    for (const x of p.remote.prs) if (!x.isDraft) L.prs.push({ k, at: x.updatedAt, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${esc(x.title)}`, note: "updated " + fmt(x.updatedAt) });
+    for (const x of d) if (x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure") L.errors.push({ k, at: x.at, html: `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.workflow)}</a> failed`, note: fmt(x.at) + " · open it to see why" });
+    const st = by("staging"), pr = by("production");
+    // Needs staging = GitHub has a commit newer than the newest staging run (or staging never ran).
+    const commit = (p.remote.activity || []).find((i) => i.type === "commit");
+    if (st && commit && t(commit.at) > t(st.at)) L.staging.push({ k, at: commit.at, html: `<a href="${esc(commit.url)}" target="_blank" rel="noopener">${esc(commit.title)}</a>`, note: `committed ${fmt(commit.at)} · last staging ${fmt(st.at)}${st.state === "success" ? "" : " (" + esc(String(st.state).replace(/_/g, " ")) + ")"}` });
+    if (st?.state === "success" && (!pr || (pr.state === "success" && t(st.at) > t(pr.at)))) L.needs.push({ k, at: st.at, html: `Staging is deployed, production ${pr ? "is older" : "never deployed"}`, note: `staging ${fmt(st.at)}${pr ? " · production " + fmt(pr.at) : ""}` });
+    else if (pr?.state === "success") L.ok.push({ k, at: pr.at, html: `<a href="${esc(pr.url)}" target="_blank" rel="noopener">Production deployed</a>`, note: fmt(pr.at) });
+  }
+  return L;
+}
+function drawLists() {
+  const el = $("#lists");
+  if (!planReady) { el.innerHTML = ""; return; } // shown once every project has loaded, like the actions
+  const L = releaseLists();
+  const box = (title, arr, empty, cls) => `<div class="box"><h3>${title} <span class="pill ${arr.length ? cls : "ok"}">${arr.length}</span></h3>${arr.length ? `<ul>${arr.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((i) => `<li><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span>: ${i.html} <span class="meta">${i.note}</span></li>`).join("")}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
+  el.innerHTML = `<div class="lists">${box("PRs to merge", L.prs, "No open pull requests.", "warn")}${box("Deployment errors", L.errors, "No failed deployments.", "bad")}${box("Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn")}${box("Needs production deployment", L.needs, "Production is up to date everywhere.", "warn")}${box("Successfully deployed", L.ok, "No production deployments found.", "ok")}</div>`;
+}
+$("#lists").onclick = (e) => { const k = e.target.closest("[data-lopen]")?.dataset.lopen; if (!k) return; const g = groupOf(k); if (g && g !== group) setGroup(g); openProject(k); };
+
+// The section bar. Each section shows how many things need you.
+function groupsNav() {
+  const open = (g) => Object.values(plan).filter((i) => i.open && !i.ticked && groupOf(i.key) === g).length;
+  const n = (g) => g === "google" ? (SITES().reduce((a, s) => a + (s.daily[0]?.open || 0), 0)) : planReady ? open(g) : 0;
+  $("#groups").innerHTML = GROUPS.map(([k, name]) => `<button aria-pressed="${group === k}" data-g="${k}">${name}${n(k) ? `<span class="gn" title="${k === "google" ? "Open search findings" : "Actions waiting"}">${n(k)}</span>` : ""}</button>`).join("");
+}
+// Close a pull request (never merged; its branch is kept) or an issue on GitHub. Asks first.
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-close-pr],[data-close-issue]"); if (!b) return;
+  const issue = b.dataset.closeIssue !== undefined, n = issue ? b.dataset.closeIssue : b.dataset.closePr, key = b.dataset.key, noun = issue ? "issue" : "pull request";
+  const r0 = DATA.projects.find((x) => x.key === key)?.remote, item = (issue ? r0?.issues : r0?.prs)?.find((x) => String(x.number) === n);
+  if (!confirm(`Close ${noun} #${n}${item ? ` "${item.title}"` : ""} in ${key} on GitHub?\n\n${issue ? "It is marked closed on GitHub. You can reopen it there." : "It is closed without merging. Its changes are not used, and its branch is kept."}`)) return;
+  if (!live) { alert(`This page was opened as a file, so it can't close a ${noun}.\nWhat to do: double-click refresh.cmd and use the page it opens (http://127.0.0.1:8788).`); return; }
+  const label = b.textContent; b.disabled = true; b.textContent = "Closing...";
+  try {
+    const r = await fetch("/gh-close/" + encodeURIComponent(key), { method: "POST", body: JSON.stringify({ number: Number(n), kind: issue ? "issue" : "pr" }) });
+    if (!r.ok) throw new Error(await r.text());
+    refresh(); // the lists are rebuilt from GitHub, so the closed item drops out and its action is ticked as Fixed
+  } catch (err) {
+    b.disabled = false; b.textContent = label;
+    alert(/What to do:/.test(err.message) ? err.message : /failed to fetch|networkerror/i.test(err.message) ? offline : err.message + "\nWhat to do: try again. If it keeps failing, send a screenshot of this message to Claude.");
+  }
+});
+$("#groups").onclick = (e) => { const g = e.target.closest("[data-g]")?.dataset.g; if (g) setGroup(g); };
+function setGroup(g) {
+  if (g === group) return;
+  if (tab !== "overview") closeProject();
+  group = g; try { localStorage.setItem(GROUP_KEY, g); } catch {}
+  showGroup();
+}
+function showGroup() {
+  $("#gProjects").hidden = group === "google"; $("#gGoogle").hidden = group !== "google";
+  groupsNav();
+  if (group === "google") sRender(); else { cards(); tabs(); render(); drawPlan(); drawLists(); }
+}
+showGroup();
+if (live) poll().then(watchBuild); else { updatePlan(); drawPlan(); drawLists(); } // a file copy shows the data it was saved with
 </script>
 </body>
 </html>

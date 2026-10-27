@@ -8,7 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { OWNER, PROJECTS, claudeSessions, winDir } from "./projects.mjs";
+import { OWNER, PROJECTS, claudeSessions, collectSearch, winDir } from "./projects.mjs";
 
 const run = (cmd, args, cwd) => new Promise((resolve, reject) => execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20, windowsHide: true },
   (err, out, errOut) => (err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out))));
@@ -65,17 +65,31 @@ async function remote({ repo }) {
   if (!repo) return { url: null, issues: [], prs: [], activity: [] };
   const r = `${OWNER}/${repo}`;
   const json = (...args) => attempt(async () => JSON.parse(await gh(...args)), []);
-  const [issues, prs, act] = await Promise.all([
+  const [issues, prs, act, runs] = await Promise.all([
     json("issue", "list", "-R", r, "--state", "open", "-L", "50", "--json", "number,title,url,updatedAt,body,labels"),
     json("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt"),
     activity(r, json),
+    json("run", "list", "-R", r, "-L", "60", "--json", "displayTitle,workflowName,status,conclusion,createdAt,url,headBranch"),
   ]);
   return {
     url: `https://github.com/${r}`,
     issues: issues.map((i) => ({ number: i.number, title: i.title, url: i.url, updatedAt: i.updatedAt, labels: i.labels.map((l) => l.name), body: (i.body || "").slice(0, 4000) })),
     prs,
     activity: act,
+    deploys: deploys(runs),
   };
+}
+
+// The newest run of each deploy workflow ("Deploy to Staging", "Deploy to Production", "Deploy End-to-End"...), so the
+// dashboard can say what is deployed where. state is the run's conclusion, or its status while it is still running.
+function deploys(runs) {
+  const seen = new Map();
+  for (const w of runs || []) {
+    if (!/deploy/i.test(w.workflowName) || seen.has(w.workflowName)) continue; // runs come newest first
+    seen.set(w.workflowName, { workflow: w.workflowName, stage: /production/i.test(w.workflowName) ? "production" : /staging/i.test(w.workflowName) ? "staging" : "other",
+      state: w.conclusion || w.status, at: w.createdAt, url: w.url, title: w.displayTitle, branch: w.headBranch });
+  }
+  return [...seen.values()];
 }
 
 // One timeline of GitHub messages: issues and PRs (opened or updated), their comments, commits and Actions runs.
@@ -114,7 +128,7 @@ async function branchPr(repo, branch) {
 }
 
 async function collect(p) {
-  const out = { key: p.key, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null };
+  const out = { key: p.key, group: p.group, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null };
   const [g, rem] = await Promise.all([gitState(p.dir).catch((e) => { out.error = String(e.message).slice(0, 300); return null; }), remote(p)]);
   if (g) out.git = g;
   out.doc = await attempt(() => statusDoc(p.dir));
@@ -128,8 +142,15 @@ async function collect(p) {
 // A few projects at a time, started in list order, so the first cards fill in first.
 const results = new Array(PROJECTS.length);
 let next = 0;
+// The Google tab's search monitor data is collected alongside, and handed over as one "@@search" line.
+const searchTask = (async () => {
+  const s = await attempt(collectSearch, { updatedAt: new Date().toISOString(), sites: [], failed: true });
+  console.log("@@search " + JSON.stringify(s));
+  return s;
+})();
 await Promise.all(Array.from({ length: 4 }, async () => { while (next < PROJECTS.length) { const i = next++; results[i] = await collect(PROJECTS[i]); } }));
-const data = { generatedAt: new Date().toISOString(), projects: results };
+const search = await searchTask;
+const data = { generatedAt: new Date().toISOString(), projects: results, search };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify(data).replace(/</g, "\\u003c"));
