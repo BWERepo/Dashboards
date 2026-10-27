@@ -823,12 +823,15 @@ function sCards() {
     const hist = s.daily.slice(0, 14).reverse().filter((r) => r.open != null), max = Math.max(1, ...hist.map((r) => r.open));
     return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
       <div class="big ${cls}">${esc(label)}</div>
-      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) : "Daily workflow not found in " + esc(s.repo)}</div>
+      <div class="sub">${s.setUp ? "Last daily run " + ago(s.lastRun?.createdAt) + (s.state ? "<br>" + gscNote(s) : "") : "Daily workflow not found in " + esc(s.repo)}</div>
       ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
       ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
     </div>`;
   }).join("");
 }
+// When Google Search Console was last asked about this site: the newest per-page check in the monitor's state file.
+const gscAt = (s) => { const t = Math.max(0, ...(s.state?.pages || []).map((x) => Date.parse(x.lastChecked) || 0), Date.parse(s.state?.lastDaily) || 0); return t ? new Date(t).toISOString() : ""; };
+const gscNote = (s) => { const a = gscAt(s); return a ? `Google Search Console data updated ${fmt(a)} (${ago(a)})` : "No Google Search Console data yet"; };
 function sTabs() {
   const items = [["overview", "Overview"], ...SITES().map((s) => [s.repo, s.name])];
   $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
@@ -849,7 +852,7 @@ function sSiteView(s) {
     (!f.kind || x.findings.some((y) => y.kind === f.kind)) && (!f.verdict || (f.verdict === "ok" ? x.verdict === "PASS" : x.verdict !== "PASS")))
     .sort((a, b) => (b.findings.length - a.findings.length) || a.url.localeCompare(b.url));
   const d = s.daily[0];
-  return `<div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
+  return `<div class="sub"><b>${gscNote(s)}</b></div><div class="sub"><a href="${s.url}/actions" target="_blank" rel="noopener">GitHub Actions</a> · <a href="${s.url}/issues?q=label%3Asearch-monitor" target="_blank" rel="noopener">Findings issue</a>${d ? ` · Sitemap: ${d.sitemap ?? "-"} URLs${d.sitemapNote ? " (" + esc(d.sitemapNote) + ")" : ""}` : ""}</div>
   <h3>Indexed pages over time</h3>${lineChart([idxSeries(s)])}
   <h3>Pages (${list.length} of ${pages.length})</h3>
   <div class="stools"><input id="sq" placeholder="Filter by URL" value="${esc(f.q)}">
