@@ -158,6 +158,10 @@ const GROUP_KEY = "projdash-group";
 let group = (() => { const k = tab !== "overview" && DATA.projects.find((p) => p.key === tab)?.group; if (k) return k; try { const g = localStorage.getItem(GROUP_KEY); return GROUPS.some(([x]) => x === g) ? g : "websites"; } catch { return "websites"; } })();
 const inGroup = () => DATA.projects.filter((p) => p.group === group);
 const groupOf = (key) => DATA.projects.find((p) => p.key === key)?.group;
+// Failed-Action items you ticked stay closed for good: keyed by project and workflow, so later failures of it are not reported either.
+const MUTE_KEY = "projdash-muted-runs";
+let MUTED = (() => { try { return JSON.parse(localStorage.getItem(MUTE_KEY)) || {}; } catch { return {}; } })();
+const saveMuted = () => { try { localStorage.setItem(MUTE_KEY, JSON.stringify(MUTED)); } catch {} };
 let view = "messages", msgTab = "claude", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
@@ -259,7 +263,7 @@ function status(p) {
   if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
   if (c.uncommitted || c.unpushed) return ["Needs commit", "warn"];
   if (p.git.behind) return ["Behind remote", "warn"];
-  if (openFailures(p).some((i) => !(plan[p.key + "|run|" + i.title.split(": ")[0]]?.ticked))) return ["Action failed", "bad"]; // a GitHub Actions workflow whose newest run failed
+  if (openFailures(p).length) return ["Action failed", "bad"]; // a GitHub Actions workflow whose newest run failed
   if (c.issues || c.prs) return ["Open items", "warn"];
   return ["Clean", "ok"];
 }
@@ -617,7 +621,7 @@ function claudeCol(p) {
 const GH_TYPES = { attention: "Needs attention", all: "All activity", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
 const failedRun = (i) => i.type === "run" && /fail|cancel|timed|startup/.test(i.state || "");
 // A failure only needs attention while it is that workflow's newest run; a later green run has fixed it.
-const openFailures = (p) => { const seen = new Set(), dep = p.remote.deploys || []; return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); const d = dep.find((x) => x.workflow === wf); return failedRun(i) && !(d && deploySuperseded(dep, d)); }); };
+const openFailures = (p) => { const seen = new Set(), dep = p.remote.deploys || []; return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); if (MUTED[p.key + "|run|" + wf]) return false; const d = dep.find((x) => x.workflow === wf); return failedRun(i) && !(d && deploySuperseded(dep, d)); }); };
 const openItem = (i) => (i.type === "issue" || i.type === "pr") && i.state !== "closed" && i.state !== "merged";
 function ghCol(p) {
   const r = p.remote;
@@ -694,7 +698,7 @@ function planBlock(p) {
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
   const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}>${i.what}</label>
-    <span class="meta">${!i.open ? "&#10003; Fixed " + short(new Date(i.doneAt).toISOString()) : i.ticked ? "Closed by you " + short(new Date(i.tickedAt || Date.now()).toISOString()) + ". Still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
+    <span class="meta">${!i.open ? (i.muted ? "&#10003; Closed by you. This workflow is not reported again." : "&#10003; Fixed " + short(new Date(i.doneAt).toISOString())) : i.ticked ? "Closed by you " + short(new Date(i.tickedAt || Date.now()).toISOString()) + ". Still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
   const shown = planMore[p.key] ? open : open.slice(0, PLAN_SHOW);
   return `<div class="cplan" data-noopen><b class="${open.length ? "warn" : ""}">${open.length ? `Needs you (${open.length})` : `<span class="ok">&#10003; Nothing needs you</span>`}</b>${building ? ` <span class="meta">checking again...</span>` : ""}
     ${shown.length ? `<ul>${shown.map(row).join("")}</ul>` : ""}
@@ -702,7 +706,7 @@ function planBlock(p) {
     ${shut.length ? `<button class="ibtn" data-plan-closed="${esc(p.key)}">${planClosed[p.key] ? "Hide" : "Show"} ${shut.length} closed</button>${planClosed[p.key] ? `<ul>${shut.map(row).join("")}</ul>` : ""}` : ""}</div>`;
 }
 function drawPlan() { if (!document.activeElement?.matches?.("#cards select")) cards(); } // a redraw would close an open dropdown
-$("#cards").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); savePlan(); drawPlan(); } });
+$("#cards").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); if (id.includes("|run|") && e.target.checked) { MUTED[id] = 1; plan[id].muted = true; saveMuted(); } savePlan(); drawPlan(); } });
 $("#cards").addEventListener("click", (e) => {
   const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-more],[data-plan-closed]");
   if (!t) return;
