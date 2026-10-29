@@ -158,6 +158,10 @@ const GROUP_KEY = "projdash-group";
 let group = (() => { const k = tab !== "overview" && DATA.projects.find((p) => p.key === tab)?.group; if (k) return k; try { const g = localStorage.getItem(GROUP_KEY); return GROUPS.some(([x]) => x === g) ? g : "websites"; } catch { return "websites"; } })();
 const inGroup = () => DATA.projects.filter((p) => p.group === group);
 const groupOf = (key) => DATA.projects.find((p) => p.key === key)?.group;
+// Failed-Action items you ticked stay closed for good: keyed by project and workflow, so later failures of it are not reported either.
+const MUTE_KEY = "projdash-muted-runs";
+let MUTED = (() => { try { return JSON.parse(localStorage.getItem(MUTE_KEY)) || {}; } catch { return {}; } })();
+const saveMuted = () => { try { localStorage.setItem(MUTE_KEY, JSON.stringify(MUTED)); } catch {} };
 let view = "messages", msgTab = "claude", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
@@ -259,7 +263,7 @@ function status(p) {
   if (diverged(p)) return c.uncommitted ? ["Needs commit", "warn"] : ["Diverged", "warn"];
   if (c.uncommitted || c.unpushed) return ["Needs commit", "warn"];
   if (p.git.behind) return ["Behind remote", "warn"];
-  if (openFailures(p).some((i) => !(plan[p.key + "|run|" + i.title.split(": ")[0]]?.ticked))) return ["Action failed", "bad"]; // a GitHub Actions workflow whose newest run failed
+  if (openFailures(p).length) return ["Action failed", "bad"]; // a GitHub Actions workflow whose newest run failed
   if (c.issues || c.prs) return ["Open items", "warn"];
   return ["Clean", "ok"];
 }
@@ -617,7 +621,7 @@ function claudeCol(p) {
 const GH_TYPES = { attention: "Needs attention", all: "All activity", talk: "Issues & PRs", comment: "Comments", commit: "Commits", run: "Actions" };
 const failedRun = (i) => i.type === "run" && /fail|cancel|timed|startup/.test(i.state || "");
 // A failure only needs attention while it is that workflow's newest run; a later green run has fixed it.
-const openFailures = (p) => { const seen = new Set(), dep = p.remote.deploys || []; return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); const d = dep.find((x) => x.workflow === wf); return failedRun(i) && !(d && deploySuperseded(dep, d)); }); };
+const openFailures = (p) => { const seen = new Set(), dep = p.remote.deploys || []; return (p.remote.activity || []).filter((i) => { if (i.type !== "run") return false; const wf = i.title.split(": ")[0]; if (seen.has(wf)) return false; seen.add(wf); if (MUTED[p.key + "|run|" + wf]) return false; const d = dep.find((x) => x.workflow === wf); return failedRun(i) && !(d && deploySuperseded(dep, d)); }); };
 const openItem = (i) => (i.type === "issue" || i.type === "pr") && i.state !== "closed" && i.state !== "merged";
 function ghCol(p) {
   const r = p.remote;
@@ -694,7 +698,7 @@ function planBlock(p) {
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
   const row = (i) => { const on = !i.open || i.ticked; return `<li class="${on ? "done" : ""}"><label><input type="checkbox" data-plan-tick="${esc(i.id)}" ${on ? "checked" : ""} ${i.open ? "" : `disabled title="Fixed: it's no longer in the data"`}>${i.what}</label>
-    <span class="meta">${!i.open ? "&#10003; Fixed " + short(new Date(i.doneAt).toISOString()) : i.ticked ? "Closed by you " + short(new Date(i.tickedAt || Date.now()).toISOString()) + ". Still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
+    <span class="meta">${!i.open ? (i.muted ? "&#10003; Closed by you. This workflow is not reported again." : "&#10003; Fixed " + short(new Date(i.doneAt).toISOString())) : i.ticked ? "Closed by you " + short(new Date(i.tickedAt || Date.now()).toISOString()) + ". Still a problem in the data, so check it's really done." : esc(i.todo)}</span>${button(i)}</li>`; };
   const shown = planMore[p.key] ? open : open.slice(0, PLAN_SHOW);
   return `<div class="cplan" data-noopen><b class="${open.length ? "warn" : ""}">${open.length ? `Needs you (${open.length})` : `<span class="ok">&#10003; Nothing needs you</span>`}</b>${building ? ` <span class="meta">checking again...</span>` : ""}
     ${shown.length ? `<ul>${shown.map(row).join("")}</ul>` : ""}
@@ -702,7 +706,7 @@ function planBlock(p) {
     ${shut.length ? `<button class="ibtn" data-plan-closed="${esc(p.key)}">${planClosed[p.key] ? "Hide" : "Show"} ${shut.length} closed</button>${planClosed[p.key] ? `<ul>${shut.map(row).join("")}</ul>` : ""}` : ""}</div>`;
 }
 function drawPlan() { if (!document.activeElement?.matches?.("#cards select")) cards(); } // a redraw would close an open dropdown
-$("#cards").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); savePlan(); drawPlan(); } });
+$("#cards").addEventListener("change", (e) => { const id = e.target.dataset?.planTick; if (id && plan[id]) { plan[id].ticked = e.target.checked; plan[id].tickedAt = Date.now(); if (id.includes("|run|") && e.target.checked) { MUTED[id] = 1; plan[id].muted = true; saveMuted(); } savePlan(); drawPlan(); } });
 $("#cards").addEventListener("click", (e) => {
   const t = e.target.closest("[data-plan-git],[data-plan-open],[data-plan-more],[data-plan-closed]");
   if (!t) return;
@@ -853,11 +857,46 @@ function sTabs() {
   const items = [["overview", "Overview"], ...SITES().map((s) => [s.repo, s.name])];
   $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
 }
+// Our standard sort/filter table: click a heading to sort (click again to reverse), a search box, tick-box filters for the
+// columns marked f, a date range for the column marked date, and Reset filters. Cells carry data-v (the sortable value).
+const STD = {};
+function stdTable(id, cols, rows) { // cols: [{h, f, date}]; rows: [[{t, v, html}]]
+  const S = STD[id] ||= { col: null, dir: 1, q: "", f: {}, from: "", to: "" }, di = cols.findIndex((c) => c.date);
+  const msel = (i, c) => `<details class="msel"><summary>${esc(c.h)}<span class="meta">${(S.f[i] || []).length ? " (" + S.f[i].length + ")" : ""}</span></summary><div class="mpanel">${[...new Set(rows.map((r) => r[i].t))].sort().map((v) => `<label><input type="checkbox" data-stdf="${i}" value="${esc(v)}" ${(S.f[i] || []).includes(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</div></details>`;
+  const bar = `<div class="tools" data-stdbar="${id}"><input data-stdq placeholder="Search" size="18" value="${esc(S.q)}" aria-label="Search the table">${cols.map((c, i) => c.f ? msel(i, c) : "").join("")}${di >= 0 ? `From <input type="date" data-stdd="from" value="${esc(S.from)}" aria-label="From date"> to <input type="date" data-stdd="to" value="${esc(S.to)}" aria-label="To date">` : ""}<button class="ibtn" data-stdreset>Reset filters</button><span class="meta" data-stdn></span></div>`;
+  return bar + `<div class="tbl"><table data-std="${id}" data-datecol="${di}"><thead><tr>${cols.map((c, i) => `<th data-sort="${i}" tabindex="0" style="cursor:pointer" title="Click to sort">${c.h}<span class="sa"></span></th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td data-v="${esc(c.v ?? c.t)}">${c.html ?? esc(c.t)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function stdApply(id) {
+  const t = document.querySelector(`table[data-std="${id}"]`), S = STD[id]; if (!t || !S) return;
+  const body = t.tBodies[0], rows = [...body.rows], di = Number(t.dataset.datecol);
+  if (S.col != null) {
+    const val = (r) => r.cells[S.col]?.dataset.v ?? r.cells[S.col]?.textContent.trim() ?? "", num = (v) => (v !== "" && isFinite(v) ? Number(v) : NaN);
+    rows.sort((a, b) => { const x = val(a), y = val(b), nx = num(x), ny = num(y); return S.dir * (!isNaN(nx) && !isNaN(ny) ? nx - ny : x.localeCompare(y)); });
+    rows.forEach((r) => body.appendChild(r));
+  }
+  let n = 0;
+  for (const r of rows) {
+    const q = S.q.trim().toLowerCase(), v = (i) => r.cells[i].dataset.v ?? r.cells[i].textContent.trim();
+    const ok = (!q || r.textContent.toLowerCase().includes(q)) && Object.entries(S.f).every(([i, a]) => !a.length || a.includes(v(i))) && (di < 0 || ((!S.from || v(di).slice(0, 10) >= S.from) && (!S.to || v(di).slice(0, 10) <= S.to)));
+    r.hidden = !ok; if (ok) n++;
+  }
+  t.querySelectorAll("th .sa").forEach((s, i) => { s.textContent = S.col === i ? (S.dir > 0 ? " \u25B2" : " \u25BC") : ""; });
+  const c = document.querySelector(`[data-stdbar="${id}"] [data-stdn]`); if (c) c.textContent = n === rows.length ? "" : `Showing ${n} of ${rows.length}`;
+}
+document.addEventListener("click", (e) => {
+  const th = e.target.closest("table[data-std] th[data-sort]"), rs = e.target.closest("[data-stdreset]");
+  if (th) { const id = th.closest("table").dataset.std, S = (STD[id] ||= { col: null, dir: 1, q: "", f: {}, from: "", to: "" }), i = Number(th.dataset.sort); S.dir = S.col === i ? -S.dir : 1; S.col = i; stdApply(id); if (id === "prs") applyPF(); }
+  if (rs) { const id = rs.closest("[data-stdbar]").dataset.stdbar; Object.assign(STD[id], { q: "", f: {}, from: "", to: "" }); if (id === "deploys") drawLists(); else sRender(); }
+  document.querySelectorAll("[data-stdbar] details[open]").forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+});
+document.addEventListener("input", (e) => { const bar = e.target.closest("[data-stdbar]"); if (!bar) return; const id = bar.dataset.stdbar, S = STD[id]; if (e.target.matches("[data-stdq]")) S.q = e.target.value; else if (e.target.dataset.stdd) S[e.target.dataset.stdd] = e.target.value; else return; stdApply(id); });
+document.addEventListener("change", (e) => { const i = e.target.dataset?.stdf, bar = e.target.closest("[data-stdbar]"); if (i == null || !bar) return; const id = bar.dataset.stdbar, S = STD[id]; S.f[i] = [...bar.querySelectorAll(`[data-stdf="${i}"]:checked`)].map((x) => x.value); const m = e.target.closest("details").querySelector("summary .meta"); if (m) m.textContent = S.f[i].length ? " (" + S.f[i].length + ")" : ""; stdApply(id); });
 function sOverview() {
-  const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
+  const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, idx: (s.history || []).find((h) => h.at.slice(0, 10) === r.date), ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
   const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
-    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
+  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? stdTable("daily", [{ h: "Date", date: true }, { h: "Site", f: true }, { h: "Sitemap" }, { h: "Checked" }, { h: "New" }, { h: "Indexed" }, { h: "Open findings" }, { h: "Google", f: true }],
+      rows.map((r) => [{ t: r.date }, { t: r.site }, { t: String(r.sitemap ?? "-") }, { t: String(r.checked ?? "-") }, { t: String(r.fresh ?? "-") },
+        r.idx ? { t: String(r.idx.indexed), html: `<b class="ok">${r.idx.indexed}</b> of ${r.idx.total}` } : { t: "-", v: "-1" }, { t: String(r.open ?? "-") }, { t: r.google }])) : `<div class="empty">No daily reports yet.</div>`) +
     `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
 }
 function sSiteView(s) {
@@ -887,6 +926,7 @@ function sRender() {
   sCards(); sTabs();
   const s = SITES().find((x) => x.repo === sTab);
   $("#sdetail").innerHTML = !DATA.search ? "" : s ? sSiteView(s) : sOverview();
+  if (!s) stdApply("daily");
   if (!s || !s.setUp) return;
   const f = sView[s.repo], on = (id, key) => { const el = $(id); if (el) el.oninput = () => { f[key] = el.value; const pos = el.selectionStart; sRender(); const n = $(id); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} }; };
   on("#sq", "q"); on("#sk", "kind"); on("#sv", "verdict");
@@ -936,16 +976,6 @@ function drawLists() {
     const sorted = (a) => a.sort((x, y) => Date.parse(y.at) - Date.parse(x.at));
     return `<div class="box"><h3>${title} <span class="pill ${open.length ? cls : "ok"}">${open.length}</span>${shut.length ? ` <button class="ibtn" style="padding:0 8px;font-size:12px" data-lshow="${name}">${showClosed[name] ? "Hide" : "Show"} ${shut.length} closed</button>` : ""}</h3>${open.length || (showClosed[name] && shut.length) ? `<ul>${sorted(open).map((i) => li(i, false)).join("")}${showClosed[name] ? sorted(shut).map((i) => li(i, true)).join("") : ""}</ul>` : `<div class="meta">${empty}</div>`}</div>`;
   };
-  // Deployment: each project's newest staging and production run, with when it ran and whether it worked.
-  const run = (x) => !x ? `<span class="meta">never run</span>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="${x.state === "success" ? "ok" : x.state === "failure" || x.state === "timed_out" || x.state === "startup_failure" ? "bad" : "warn"}">${x.state === "success" ? "&#10003; Succeeded" : x.state === "failure" ? "&#10007; Failed" : esc(String(x.state).replace(/_/g, " "))}</a> <span class="meta">${fmt(x.at)}${/end-to-end|e2e/i.test(x.workflow) ? " · End-to-End" : ""}</span>`;
-  const dep = DATA.projects.filter((x) => !x.loading && (x.group === "websites" || x.key === "BWE_Dashboard")).map((x) => { // the other utilities are not deployed, so they are not listed
-    const d = x.remote.deploys || [], by = (s) => stageRun(d, s), tm = (r) => Date.parse(r?.at) || 0, row = (at, html) => ({ at, html });
-    if (x.key === "BWE_Dashboard") { // deployed by update.cmd from the last push, so that push is its succeeded deployment
-      const c = (x.remote.activity || []).find((i) => i.type === "commit"), cell = c ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" class="ok">&#10003; Succeeded</a> <span class="meta">${fmt(c.at)} · update.cmd</span>` : `<span class="meta">never pushed</span>`;
-      return row(Date.parse(c?.at) || 0, `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td><td>${cell}</td><td>${cell}</td></tr>`);
-    }
-    return row(Math.max(tm(by("staging")), tm(by("production"))), `<tr><td><span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span></td>${d.length ? `<td>${run(by("staging"))}</td><td>${run(by("production"))}</td>` : `<td colspan="2" class="meta">${x.key === "BWE_Dashboard" ? (() => { const c = (x.remote.activity || []).find((i) => i.type === "commit"); return `Deployed with update.cmd from the last push: <b>${c ? fmt(c.at) : "never pushed"}</b>`; })() : "No deploy workflow found"}</td>`}</tr>`);
-  }).sort((a, b) => b.at - a.at).map((r) => r.html).join(""); // newest deployment first; projects that never deployed last
   // PRs: the recent pull requests of every project (any state), newest first, each with what you need to do about it.
   const need = { open: "Review it, then merge it (or close it if it's not needed).", draft: "Nothing yet: it's still a draft.", merged: "Nothing: it's merged.", closed: "Nothing: it was closed without merging." };
   const prs = DATA.projects.filter((x) => !x.loading).flatMap((x) => (x.remote.prHistory?.length ? x.remote.prHistory : (x.remote.activity || []).filter((i) => i.type === "pr")).map((i) => ({ k: x.key, ...i }))).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -953,10 +983,35 @@ function drawLists() {
   // Project, PR #, Merged and What's needed are multi-select: tick any number of boxes. Nothing ticked means all.
   const ms = (f, title, opts) => `<details class="msel" data-msel="${f}"><summary>${title}<span class="meta" data-mcount="${f}">${PF[f].length ? " (" + PF[f].length + ")" : ""}</span></summary><div class="mpanel">${opts.map(([v, l]) => `<label><input type="checkbox" data-pfm="${f}" value="${esc(v)}" ${PF[f].includes(String(v)) ? "checked" : ""}> ${l}</label>`).join("")}</div></details>`;
   const filt = prs.length ? `<div class="tools" id="prf">${ms("k", "Project", [...new Set(prs.map((i) => i.k))].map((k) => [k, esc(k)]))}${ms("n", "PR #", [...new Set(prs.map((i) => i.number))].sort((a, b) => b - a).map((n) => [n, "#" + n]))}<input data-pf="t" placeholder="PR title contains" size="22" value="${esc(PF.t)}" aria-label="Filter by PR title">${ms("m", "Merged", [["yes", "Merged"], ["no", "Not merged"]])}${ms("s", "What's needed", [["open", "Review and merge"], ["draft", "Nothing: draft"], ["merged", "Nothing: merged"], ["closed", "Nothing: closed"]])}From <input type="date" data-pf="from" value="${esc(PF.from)}" aria-label="From date"> to <input type="date" data-pf="to" value="${esc(PF.to)}" aria-label="To date"><button class="ibtn" data-prreset>Reset filters</button><span class="meta" id="prfn"></span></div>` : "";
-  const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${filt}${prs.length ? `<div class="tbl"><table><tr><th>Project</th><th>Timestamp</th><th>PR #</th><th>PR title</th><th>State</th><th>Merged</th><th>Push</th><th>What's needed</th></tr>${prs.map((i) => `<tr data-prow data-k="${esc(i.k)}" data-n="${i.number}" data-t="${esc(i.title.toLowerCase())}" data-s="${esc(i.state)}" data-at="${Date.parse(i.at) || 0}" data-m="${i.state === "merged" ? "yes" : "no"}"><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td>${fmt(i.at)}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td>${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td>${push[i.k] ? fmt(push[i.k]) : ""}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
-  const deployBox = `<div class="box" style="grid-column:1/-1"><h3>Deployment</h3><div class="tbl"><table><tr><th>Project</th><th>Latest staging deployment</th><th>Latest production deployment</th></tr>${dep}</table></div></div>`;
-  el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${deployBox}${prBox}</div>`;
-  applyPF();
+  const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${filt}${prs.length ? `<div class="tbl"><table data-std="prs" data-datecol="-1"><thead><tr>${["Project", "Timestamp", "PR #", "PR title", "State", "Merged", "Push", "What's needed"].map((h, i) => `<th data-sort="${i}" tabindex="0" style="cursor:pointer" title="Click to sort">${h}<span class="sa"></span></th>`).join("")}</tr></thead><tbody>${prs.map((i) => `<tr data-prow data-k="${esc(i.k)}" data-n="${i.number}" data-t="${esc(i.title.toLowerCase())}" data-s="${esc(i.state)}" data-at="${Date.parse(i.at) || 0}" data-m="${i.state === "merged" ? "yes" : "no"}"><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td data-v="${Date.parse(i.at) || 0}">${fmt(i.at)}</td><td data-v="${i.number}"><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td data-v="${Date.parse(i.merged) || 0}">${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td data-v="${Date.parse(push[i.k]) || 0}">${push[i.k] ? fmt(push[i.k]) : ""}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
+  // Deployments: every recent deploy run of every project (End-to-End covers staging and production), each with the PRs merged
+  // since the previous successful deployment of the same stage. BWE_Dashboard has no deploy workflow, so its pushes are its deployments.
+  const kindOf = (x) => /end-to-end|e2e/i.test(x.workflow) ? "End-to-End" : x.stage === "production" ? "Production" : x.stage === "staging" ? "Staging" : "Other";
+  const resultOf = (s) => s === "success" ? "Succeeded" : /fail|timed_out|startup/.test(s) ? "Failed" : s === "cancelled" ? "Cancelled" : String(s).replace(/_/g, " ");
+  const blurb = (b) => { const l = String(b || "").split("\n").map((x) => x.replace(/^(?:[#>*\-\s]|\[[ xX]\])+/, "").trim()).find((x) => x.length > 8 && !/^(summary|description|what|why|changes?)$/i.test(x)); return l ? (l.length > 170 ? l.slice(0, 170) + "…" : l) : "No description."; };
+  const localIso = (d) => { const z = (n) => String(n).padStart(2, "0"), t = new Date(d); return `${t.getFullYear()}-${z(t.getMonth() + 1)}-${z(t.getDate())}T${z(t.getHours())}:${z(t.getMinutes())}`; };
+  const deployRows = [];
+  for (const x of DATA.projects.filter((q) => !q.loading)) {
+    const hist = (x.remote.deployHistory || []).map((r) => ({ ...r, kind: kindOf(r), t: Date.parse(r.at) || 0 })).sort((a, b) => a.t - b.t);
+    const merged = (x.remote.prHistory || []).filter((q) => q.state === "merged" && q.merged).map((q) => ({ ...q, t: Date.parse(q.merged) }));
+    let runs = hist;
+    if (!hist.length && x.key === "BWE_Dashboard") runs = (x.remote.activity || []).filter((i) => i.type === "commit").map((c) => ({ kind: "Push (update.cmd)", state: "success", at: c.at, url: c.url, t: Date.parse(c.at) || 0, workflow: "" })).sort((a, b) => a.t - b.t);
+    const dd = x.remote.deploys || [], lst = stageRun(dd, "staging"), lpr = stageRun(dd, "production"), lastPush = runs[runs.length - 1];
+    const latestOf = (r) => r.kind.startsWith("Push") ? (r === lastPush ? "Latest staging + production" : "Earlier") : lst && lpr && r.url === lst.url && r.url === lpr.url ? "Latest staging + production" : lst && r.url === lst.url ? "Latest staging" : lpr && r.url === lpr.url ? "Latest production" : "Earlier";
+    if (!runs.length && x.group === "websites") deployRows.push({ t: 0, row: [{ t: x.key, html: `<span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span>` }, { t: "-", v: "" }, { t: "-" }, { t: "No deploy workflow", html: `<span class="meta">No deploy workflow found</span>` }, { t: "No workflow" }, { t: "0", html: "" }] });
+    runs.forEach((r, i) => {
+      const stage = r.kind === "Staging" ? "Staging" : "Production";
+      const prev = runs.slice(0, i).reverse().find((q) => q.state === "success" && (q.kind === "End-to-End" || q.kind === r.kind || (q.kind.startsWith("Push") && r.kind.startsWith("Push"))));
+      const prs = prev ? merged.filter((q) => q.t > prev.t && q.t <= r.t).sort((a, b) => b.t - a.t) : [];
+      const body = prev ? (prs.length ? `<details><summary>${prs.length} PR${prs.length > 1 ? "s" : ""}</summary><ul class="items">${prs.map((q) => `<li><a href="${esc(q.url)}" target="_blank" rel="noopener">#${q.number}</a> <b>${esc(q.title)}</b><div class="meta">${esc(blurb(q.body))} · merged ${fmt(q.merged)}</div></li>`).join("")}</ul></details>` : `<span class="meta">No PRs merged since the previous deployment</span>`) : `<span class="meta">First deployment in the loaded history</span>`;
+      deployRows.push({ t: r.t, row: [{ t: x.key, html: `<span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span>` }, { t: fmt(r.at), v: localIso(r.at), html: `<a href="${esc(r.url)}" target="_blank" rel="noopener">${fmt(r.at)}</a>` }, { t: r.kind },
+        { t: resultOf(r.state), html: `<span class="${r.state === "success" ? "ok" : /fail|timed_out|startup/.test(r.state) ? "bad" : "warn"}">${r.state === "success" ? "&#10003; " : ""}${esc(resultOf(r.state))}</span>` }, { t: latestOf(r) }, { t: String(prs.length), html: body }] });
+    });
+  }
+  deployRows.sort((a, b) => b.t - a.t);
+  const depsBox = `<div class="box" style="grid-column:1/-1"><h3>Deployments <span class="pill">${deployRows.length}</span></h3><div class="meta">Starts with each project\'s latest staging and production deployment. Untick the Latest filter (or use Reset filters) to see the full history.</div>${deployRows.length ? (STD.deploys ||= { col: null, dir: 1, q: "", f: { 4: ["Latest staging", "Latest production", "Latest staging + production", "No workflow"] }, from: "", to: "" }, stdTable("deploys", [{ h: "Project", f: true }, { h: "Timestamp", date: true }, { h: "Type", f: true }, { h: "Result", f: true }, { h: "Latest", f: true }, { h: "PRs included" }], deployRows.map((d) => d.row))) : `<div class="meta">No deployments found yet.</div>`}</div>`;
+  el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${depsBox}${prBox}</div>`;
+  stdApply("deploys"); stdApply("prs"); applyPF();
 }
 const PF = { k: [], n: [], t: "", m: [], s: [], from: "", to: "", all: false }, PR_SHOW = 30;
 // Newest 30 are shown; any filter (or "Show all") searches every PR the dashboard loaded (up to 100 per project).
