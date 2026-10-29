@@ -877,7 +877,7 @@ function stdApply(id) {
   let n = 0;
   for (const r of rows) {
     const q = S.q.trim().toLowerCase(), v = (i) => r.cells[i].dataset.v ?? r.cells[i].textContent.trim();
-    const ok = (!q || r.textContent.toLowerCase().includes(q)) && Object.entries(S.f).every(([i, a]) => !a.length || a.includes(v(i))) && (di < 0 || ((!S.from || v(di) >= S.from) && (!S.to || v(di) <= S.to)));
+    const ok = (!q || r.textContent.toLowerCase().includes(q)) && Object.entries(S.f).every(([i, a]) => !a.length || a.includes(v(i))) && (di < 0 || ((!S.from || v(di).slice(0, 10) >= S.from) && (!S.to || v(di).slice(0, 10) <= S.to)));
     r.hidden = !ok; if (ok) n++;
   }
   t.querySelectorAll("th .sa").forEach((s, i) => { s.textContent = S.col === i ? (S.dir > 0 ? " \u25B2" : " \u25BC") : ""; });
@@ -886,7 +886,7 @@ function stdApply(id) {
 document.addEventListener("click", (e) => {
   const th = e.target.closest("table[data-std] th[data-sort]"), rs = e.target.closest("[data-stdreset]");
   if (th) { const id = th.closest("table").dataset.std, S = (STD[id] ||= { col: null, dir: 1, q: "", f: {}, from: "", to: "" }), i = Number(th.dataset.sort); S.dir = S.col === i ? -S.dir : 1; S.col = i; stdApply(id); if (id === "prs") applyPF(); }
-  if (rs) { const id = rs.closest("[data-stdbar]").dataset.stdbar; Object.assign(STD[id], { q: "", f: {}, from: "", to: "" }); sRender(); }
+  if (rs) { const id = rs.closest("[data-stdbar]").dataset.stdbar; Object.assign(STD[id], { q: "", f: {}, from: "", to: "" }); if (id === "deploys") drawLists(); else sRender(); }
   document.querySelectorAll("[data-stdbar] details[open]").forEach((d) => { if (!d.contains(e.target)) d.open = false; });
 });
 document.addEventListener("input", (e) => { const bar = e.target.closest("[data-stdbar]"); if (!bar) return; const id = bar.dataset.stdbar, S = STD[id]; if (e.target.matches("[data-stdq]")) S.q = e.target.value; else if (e.target.dataset.stdd) S[e.target.dataset.stdd] = e.target.value; else return; stdApply(id); });
@@ -994,9 +994,32 @@ function drawLists() {
   const ms = (f, title, opts) => `<details class="msel" data-msel="${f}"><summary>${title}<span class="meta" data-mcount="${f}">${PF[f].length ? " (" + PF[f].length + ")" : ""}</span></summary><div class="mpanel">${opts.map(([v, l]) => `<label><input type="checkbox" data-pfm="${f}" value="${esc(v)}" ${PF[f].includes(String(v)) ? "checked" : ""}> ${l}</label>`).join("")}</div></details>`;
   const filt = prs.length ? `<div class="tools" id="prf">${ms("k", "Project", [...new Set(prs.map((i) => i.k))].map((k) => [k, esc(k)]))}${ms("n", "PR #", [...new Set(prs.map((i) => i.number))].sort((a, b) => b - a).map((n) => [n, "#" + n]))}<input data-pf="t" placeholder="PR title contains" size="22" value="${esc(PF.t)}" aria-label="Filter by PR title">${ms("m", "Merged", [["yes", "Merged"], ["no", "Not merged"]])}${ms("s", "What's needed", [["open", "Review and merge"], ["draft", "Nothing: draft"], ["merged", "Nothing: merged"], ["closed", "Nothing: closed"]])}From <input type="date" data-pf="from" value="${esc(PF.from)}" aria-label="From date"> to <input type="date" data-pf="to" value="${esc(PF.to)}" aria-label="To date"><button class="ibtn" data-prreset>Reset filters</button><span class="meta" id="prfn"></span></div>` : "";
   const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${filt}${prs.length ? `<div class="tbl"><table data-std="prs" data-datecol="-1"><thead><tr>${["Project", "Timestamp", "PR #", "PR title", "State", "Merged", "Push", "What's needed"].map((h, i) => `<th data-sort="${i}" tabindex="0" style="cursor:pointer" title="Click to sort">${h}<span class="sa"></span></th>`).join("")}</tr></thead><tbody>${prs.map((i) => `<tr data-prow data-k="${esc(i.k)}" data-n="${i.number}" data-t="${esc(i.title.toLowerCase())}" data-s="${esc(i.state)}" data-at="${Date.parse(i.at) || 0}" data-m="${i.state === "merged" ? "yes" : "no"}"><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td data-v="${Date.parse(i.at) || 0}">${fmt(i.at)}</td><td data-v="${i.number}"><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td data-v="${Date.parse(i.merged) || 0}">${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td data-v="${Date.parse(push[i.k]) || 0}">${push[i.k] ? fmt(push[i.k]) : ""}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
+  // Deployments: every recent deploy run of every project (End-to-End covers staging and production), each with the PRs merged
+  // since the previous successful deployment of the same stage. BWE_Dashboard has no deploy workflow, so its pushes are its deployments.
+  const kindOf = (x) => /end-to-end|e2e/i.test(x.workflow) ? "End-to-End" : x.stage === "production" ? "Production" : x.stage === "staging" ? "Staging" : "Other";
+  const resultOf = (s) => s === "success" ? "Succeeded" : /fail|timed_out|startup/.test(s) ? "Failed" : s === "cancelled" ? "Cancelled" : String(s).replace(/_/g, " ");
+  const blurb = (b) => { const l = String(b || "").split("\n").map((x) => x.replace(/^(?:[#>*\-\s]|\[[ xX]\])+/, "").trim()).find((x) => x.length > 8 && !/^(summary|description|what|why|changes?)$/i.test(x)); return l ? (l.length > 170 ? l.slice(0, 170) + "…" : l) : "No description."; };
+  const localIso = (d) => { const z = (n) => String(n).padStart(2, "0"), t = new Date(d); return `${t.getFullYear()}-${z(t.getMonth() + 1)}-${z(t.getDate())}T${z(t.getHours())}:${z(t.getMinutes())}`; };
+  const deployRows = [];
+  for (const x of DATA.projects.filter((q) => !q.loading)) {
+    const hist = (x.remote.deployHistory || []).map((r) => ({ ...r, kind: kindOf(r), t: Date.parse(r.at) || 0 })).sort((a, b) => a.t - b.t);
+    const merged = (x.remote.prHistory || []).filter((q) => q.state === "merged" && q.merged).map((q) => ({ ...q, t: Date.parse(q.merged) }));
+    let runs = hist;
+    if (!hist.length && x.key === "BWE_Dashboard") runs = (x.remote.activity || []).filter((i) => i.type === "commit").map((c) => ({ kind: "Push (update.cmd)", state: "success", at: c.at, url: c.url, t: Date.parse(c.at) || 0, workflow: "" })).sort((a, b) => a.t - b.t);
+    runs.forEach((r, i) => {
+      const stage = r.kind === "Staging" ? "Staging" : "Production";
+      const prev = runs.slice(0, i).reverse().find((q) => q.state === "success" && (q.kind === "End-to-End" || q.kind === r.kind || (q.kind.startsWith("Push") && r.kind.startsWith("Push"))));
+      const prs = prev ? merged.filter((q) => q.t > prev.t && q.t <= r.t).sort((a, b) => b.t - a.t) : [];
+      const body = prev ? (prs.length ? `<details><summary>${prs.length} PR${prs.length > 1 ? "s" : ""}</summary><ul class="items">${prs.map((q) => `<li><a href="${esc(q.url)}" target="_blank" rel="noopener">#${q.number}</a> <b>${esc(q.title)}</b><div class="meta">${esc(blurb(q.body))} · merged ${fmt(q.merged)}</div></li>`).join("")}</ul></details>` : `<span class="meta">No PRs merged since the previous deployment</span>`) : `<span class="meta">First deployment in the loaded history</span>`;
+      deployRows.push({ t: r.t, row: [{ t: x.key, html: `<span class="k" data-lopen="${esc(x.key)}">${esc(x.key)}</span>` }, { t: fmt(r.at), v: localIso(r.at), html: `<a href="${esc(r.url)}" target="_blank" rel="noopener">${fmt(r.at)}</a>` }, { t: r.kind },
+        { t: resultOf(r.state), html: `<span class="${r.state === "success" ? "ok" : /fail|timed_out|startup/.test(r.state) ? "bad" : "warn"}">${r.state === "success" ? "&#10003; " : ""}${esc(resultOf(r.state))}</span>` }, { t: String(prs.length), html: body }] });
+    });
+  }
+  deployRows.sort((a, b) => b.t - a.t);
+  const depsBox = `<div class="box" style="grid-column:1/-1"><h3>Deployments <span class="pill">${deployRows.length}</span></h3>${deployRows.length ? stdTable("deploys", [{ h: "Project", f: true }, { h: "Timestamp", date: true }, { h: "Type", f: true }, { h: "Result", f: true }, { h: "PRs included" }], deployRows.map((d) => d.row)) : `<div class="meta">No deployments found yet.</div>`}</div>`;
   const deployBox = `<div class="box" style="grid-column:1/-1"><h3>Deployment</h3><div class="tbl"><table><tr><th>Project</th><th>Latest staging deployment</th><th>Latest production deployment</th></tr>${dep}</table></div></div>`;
-  el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${deployBox}${prBox}</div>`;
-  stdApply("prs"); applyPF();
+  el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${deployBox}${depsBox}${prBox}</div>`;
+  stdApply("deploys"); stdApply("prs"); applyPF();
 }
 const PF = { k: [], n: [], t: "", m: [], s: [], from: "", to: "", all: false }, PR_SHOW = 30;
 // Newest 30 are shown; any filter (or "Show all") searches every PR the dashboard loaded (up to 100 per project).

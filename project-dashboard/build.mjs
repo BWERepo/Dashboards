@@ -71,15 +71,16 @@ async function remote({ repo }) {
     json("pr", "list", "-R", r, "--state", "open", "-L", "30", "--json", "number,title,url,isDraft,updatedAt"),
     activity(r, json),
     deployRuns(r, json),
-    json("pr", "list", "-R", r, "--state", "all", "-L", "100", "--json", "number,title,url,state,isDraft,updatedAt,mergedAt"), // for the Pull requests card's date filter
+    json("pr", "list", "-R", r, "--state", "all", "-L", "100", "--json", "number,title,url,state,isDraft,updatedAt,mergedAt,body"), // for the Pull requests card's date filter
   ]);
   return {
     url: `https://github.com/${r}`,
     issues: issues.map((i) => ({ number: i.number, title: i.title, url: i.url, updatedAt: i.updatedAt, labels: i.labels.map((l) => l.name), body: (i.body || "").slice(0, 4000) })),
     prs,
     activity: act,
-    prHistory: hist.map((p) => ({ number: p.number, title: p.title, url: p.url, state: p.isDraft && p.state === "OPEN" ? "draft" : p.state.toLowerCase(), at: p.updatedAt, merged: p.mergedAt })),
+    prHistory: hist.map((p) => ({ number: p.number, title: p.title, url: p.url, state: p.isDraft && p.state === "OPEN" ? "draft" : p.state.toLowerCase(), at: p.updatedAt, merged: p.mergedAt, body: String(p.body || "").slice(0, 600) })),
     deploys: runs.runs,
+    deployHistory: runs.history, // every recent run of every deploy workflow, for the Deployments table
     deployWorkflows: runs.names, // every deploy workflow, including ones that have never run
   };
 }
@@ -91,12 +92,14 @@ async function remote({ repo }) {
 async function deployRuns(r, json) {
   const workflows = await json("workflow", "list", "-R", r, "--json", "id,name,state");
   const deployWfs = workflows.filter((w) => /deploy/i.test(w.name) && w.state === "active");
-  const out = await Promise.all(deployWfs.map(async (w) => {
-    const [run] = await json("run", "list", "-R", r, "-w", String(w.id), "-L", "1", "--json", "displayTitle,workflowName,status,conclusion,createdAt,url,headBranch");
-    return run && { workflow: w.name, stage: /production/i.test(w.name) ? "production" : /staging/i.test(w.name) ? "staging" : "other",
-      state: run.conclusion || run.status, at: run.createdAt, url: run.url, title: run.displayTitle, branch: run.headBranch };
+  const shape = (w, run) => ({ workflow: w.name, stage: /production/i.test(w.name) ? "production" : /staging/i.test(w.name) ? "staging" : "other",
+    state: run.conclusion || run.status, at: run.createdAt, url: run.url, title: run.displayTitle, branch: run.headBranch });
+  const all = await Promise.all(deployWfs.map(async (w) => { // each workflow's recent runs, newest first: the first is its newest run
+    const list = await json("run", "list", "-R", r, "-w", String(w.id), "-L", "20", "--json", "displayTitle,workflowName,status,conclusion,createdAt,url,headBranch");
+    return list.map((run) => shape(w, run));
   }));
-  return { runs: out.filter(Boolean), names: deployWfs.map((w) => w.name) };
+  const out = all.map((l) => l[0]);
+  return { runs: out.filter(Boolean), history: all.flat(), names: deployWfs.map((w) => w.name) };
 }
 
 // One timeline of GitHub messages: issues and PRs (opened or updated), their comments, commits and Actions runs.
