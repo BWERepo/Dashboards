@@ -858,10 +858,10 @@ function sTabs() {
   $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
 }
 function sOverview() {
-  const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
+  const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, idx: (s.history || []).find((h) => h.at.slice(0, 10) === r.date), ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
   const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Open findings</th><th>Google</th></tr>
-    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
+  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Indexed</th><th>Open findings</th><th>Google</th></tr>
+    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.idx ? `<b class="ok">${r.idx.indexed}</b> of ${r.idx.total}` : "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
     `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
 }
 function sSiteView(s) {
