@@ -857,11 +857,46 @@ function sTabs() {
   const items = [["overview", "Overview"], ...SITES().map((s) => [s.repo, s.name])];
   $("#stabs").innerHTML = items.map(([k, n]) => `<button aria-pressed="${sTab === k}" data-k="${esc(k)}">${esc(n)}</button>`).join("");
 }
+// Our standard sort/filter table: click a heading to sort (click again to reverse), a search box, tick-box filters for the
+// columns marked f, a date range for the column marked date, and Reset filters. Cells carry data-v (the sortable value).
+const STD = {};
+function stdTable(id, cols, rows) { // cols: [{h, f, date}]; rows: [[{t, v, html}]]
+  const S = STD[id] ||= { col: null, dir: 1, q: "", f: {}, from: "", to: "" }, di = cols.findIndex((c) => c.date);
+  const msel = (i, c) => `<details class="msel"><summary>${esc(c.h)}<span class="meta">${(S.f[i] || []).length ? " (" + S.f[i].length + ")" : ""}</span></summary><div class="mpanel">${[...new Set(rows.map((r) => r[i].t))].sort().map((v) => `<label><input type="checkbox" data-stdf="${i}" value="${esc(v)}" ${(S.f[i] || []).includes(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</div></details>`;
+  const bar = `<div class="tools" data-stdbar="${id}"><input data-stdq placeholder="Search" size="18" value="${esc(S.q)}" aria-label="Search the table">${cols.map((c, i) => c.f ? msel(i, c) : "").join("")}${di >= 0 ? `From <input type="date" data-stdd="from" value="${esc(S.from)}" aria-label="From date"> to <input type="date" data-stdd="to" value="${esc(S.to)}" aria-label="To date">` : ""}<button class="ibtn" data-stdreset>Reset filters</button><span class="meta" data-stdn></span></div>`;
+  return bar + `<div class="tbl"><table data-std="${id}" data-datecol="${di}"><thead><tr>${cols.map((c, i) => `<th data-sort="${i}" tabindex="0" style="cursor:pointer" title="Click to sort">${c.h}<span class="sa"></span></th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td data-v="${esc(c.v ?? c.t)}">${c.html ?? esc(c.t)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function stdApply(id) {
+  const t = document.querySelector(`table[data-std="${id}"]`), S = STD[id]; if (!t || !S) return;
+  const body = t.tBodies[0], rows = [...body.rows], di = Number(t.dataset.datecol);
+  if (S.col != null) {
+    const val = (r) => r.cells[S.col]?.dataset.v ?? r.cells[S.col]?.textContent.trim() ?? "", num = (v) => (v !== "" && isFinite(v) ? Number(v) : NaN);
+    rows.sort((a, b) => { const x = val(a), y = val(b), nx = num(x), ny = num(y); return S.dir * (!isNaN(nx) && !isNaN(ny) ? nx - ny : x.localeCompare(y)); });
+    rows.forEach((r) => body.appendChild(r));
+  }
+  let n = 0;
+  for (const r of rows) {
+    const q = S.q.trim().toLowerCase(), v = (i) => r.cells[i].dataset.v ?? r.cells[i].textContent.trim();
+    const ok = (!q || r.textContent.toLowerCase().includes(q)) && Object.entries(S.f).every(([i, a]) => !a.length || a.includes(v(i))) && (di < 0 || ((!S.from || v(di) >= S.from) && (!S.to || v(di) <= S.to)));
+    r.hidden = !ok; if (ok) n++;
+  }
+  t.querySelectorAll("th .sa").forEach((s, i) => { s.textContent = S.col === i ? (S.dir > 0 ? " \u25B2" : " \u25BC") : ""; });
+  const c = document.querySelector(`[data-stdbar="${id}"] [data-stdn]`); if (c) c.textContent = n === rows.length ? "" : `Showing ${n} of ${rows.length}`;
+}
+document.addEventListener("click", (e) => {
+  const th = e.target.closest("table[data-std] th[data-sort]"), rs = e.target.closest("[data-stdreset]");
+  if (th) { const id = th.closest("table").dataset.std, S = (STD[id] ||= { col: null, dir: 1, q: "", f: {}, from: "", to: "" }), i = Number(th.dataset.sort); S.dir = S.col === i ? -S.dir : 1; S.col = i; stdApply(id); if (id === "prs") applyPF(); }
+  if (rs) { const id = rs.closest("[data-stdbar]").dataset.stdbar; Object.assign(STD[id], { q: "", f: {}, from: "", to: "" }); sRender(); }
+  document.querySelectorAll("[data-stdbar] details[open]").forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+});
+document.addEventListener("input", (e) => { const bar = e.target.closest("[data-stdbar]"); if (!bar) return; const id = bar.dataset.stdbar, S = STD[id]; if (e.target.matches("[data-stdq]")) S.q = e.target.value; else if (e.target.dataset.stdd) S[e.target.dataset.stdd] = e.target.value; else return; stdApply(id); });
+document.addEventListener("change", (e) => { const i = e.target.dataset?.stdf, bar = e.target.closest("[data-stdbar]"); if (i == null || !bar) return; const id = bar.dataset.stdbar, S = STD[id]; S.f[i] = [...bar.querySelectorAll(`[data-stdf="${i}"]:checked`)].map((x) => x.value); const m = e.target.closest("details").querySelector("summary .meta"); if (m) m.textContent = S.f[i].length ? " (" + S.f[i].length + ")" : ""; stdApply(id); });
 function sOverview() {
   const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, idx: (s.history || []).find((h) => h.at.slice(0, 10) === r.date), ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
   const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? `<div class="tbl"><table><tr><th>Date</th><th>Site</th><th>Sitemap</th><th>Checked</th><th>New</th><th>Indexed</th><th>Open findings</th><th>Google</th></tr>
-    ${rows.map((r) => `<tr><td>${r.date}</td><td>${esc(r.site)}</td><td>${r.sitemap ?? "-"}</td><td>${r.checked ?? "-"}</td><td>${r.fresh ?? "-"}</td><td>${r.idx ? `<b class="ok">${r.idx.indexed}</b> of ${r.idx.total}` : "-"}</td><td>${r.open ?? "-"}</td><td>${esc(r.google)}</td></tr>`).join("")}</table></div>` : `<div class="empty">No daily reports yet.</div>`) +
+  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? stdTable("daily", [{ h: "Date", date: true }, { h: "Site", f: true }, { h: "Sitemap" }, { h: "Checked" }, { h: "New" }, { h: "Indexed" }, { h: "Open findings" }, { h: "Google", f: true }],
+      rows.map((r) => [{ t: r.date }, { t: r.site }, { t: String(r.sitemap ?? "-") }, { t: String(r.checked ?? "-") }, { t: String(r.fresh ?? "-") },
+        r.idx ? { t: String(r.idx.indexed), html: `<b class="ok">${r.idx.indexed}</b> of ${r.idx.total}` } : { t: "-", v: "-1" }, { t: String(r.open ?? "-") }, { t: r.google }])) : `<div class="empty">No daily reports yet.</div>`) +
     `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
 }
 function sSiteView(s) {
@@ -891,6 +926,7 @@ function sRender() {
   sCards(); sTabs();
   const s = SITES().find((x) => x.repo === sTab);
   $("#sdetail").innerHTML = !DATA.search ? "" : s ? sSiteView(s) : sOverview();
+  if (!s) stdApply("daily");
   if (!s || !s.setUp) return;
   const f = sView[s.repo], on = (id, key) => { const el = $(id); if (el) el.oninput = () => { f[key] = el.value; const pos = el.selectionStart; sRender(); const n = $(id); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} }; };
   on("#sq", "q"); on("#sk", "kind"); on("#sv", "verdict");
@@ -957,10 +993,10 @@ function drawLists() {
   // Project, PR #, Merged and What's needed are multi-select: tick any number of boxes. Nothing ticked means all.
   const ms = (f, title, opts) => `<details class="msel" data-msel="${f}"><summary>${title}<span class="meta" data-mcount="${f}">${PF[f].length ? " (" + PF[f].length + ")" : ""}</span></summary><div class="mpanel">${opts.map(([v, l]) => `<label><input type="checkbox" data-pfm="${f}" value="${esc(v)}" ${PF[f].includes(String(v)) ? "checked" : ""}> ${l}</label>`).join("")}</div></details>`;
   const filt = prs.length ? `<div class="tools" id="prf">${ms("k", "Project", [...new Set(prs.map((i) => i.k))].map((k) => [k, esc(k)]))}${ms("n", "PR #", [...new Set(prs.map((i) => i.number))].sort((a, b) => b - a).map((n) => [n, "#" + n]))}<input data-pf="t" placeholder="PR title contains" size="22" value="${esc(PF.t)}" aria-label="Filter by PR title">${ms("m", "Merged", [["yes", "Merged"], ["no", "Not merged"]])}${ms("s", "What's needed", [["open", "Review and merge"], ["draft", "Nothing: draft"], ["merged", "Nothing: merged"], ["closed", "Nothing: closed"]])}From <input type="date" data-pf="from" value="${esc(PF.from)}" aria-label="From date"> to <input type="date" data-pf="to" value="${esc(PF.to)}" aria-label="To date"><button class="ibtn" data-prreset>Reset filters</button><span class="meta" id="prfn"></span></div>` : "";
-  const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${filt}${prs.length ? `<div class="tbl"><table><tr><th>Project</th><th>Timestamp</th><th>PR #</th><th>PR title</th><th>State</th><th>Merged</th><th>Push</th><th>What's needed</th></tr>${prs.map((i) => `<tr data-prow data-k="${esc(i.k)}" data-n="${i.number}" data-t="${esc(i.title.toLowerCase())}" data-s="${esc(i.state)}" data-at="${Date.parse(i.at) || 0}" data-m="${i.state === "merged" ? "yes" : "no"}"><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td>${fmt(i.at)}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td>${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td>${push[i.k] ? fmt(push[i.k]) : ""}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
+  const prBox = `<div class="box" style="grid-column:1/-1"><h3>Pull requests <span class="pill">${prs.length}</span></h3>${filt}${prs.length ? `<div class="tbl"><table data-std="prs" data-datecol="-1"><thead><tr>${["Project", "Timestamp", "PR #", "PR title", "State", "Merged", "Push", "What's needed"].map((h, i) => `<th data-sort="${i}" tabindex="0" style="cursor:pointer" title="Click to sort">${h}<span class="sa"></span></th>`).join("")}</tr></thead><tbody>${prs.map((i) => `<tr data-prow data-k="${esc(i.k)}" data-n="${i.number}" data-t="${esc(i.title.toLowerCase())}" data-s="${esc(i.state)}" data-at="${Date.parse(i.at) || 0}" data-m="${i.state === "merged" ? "yes" : "no"}"><td><span class="k" data-lopen="${esc(i.k)}">${esc(i.k)}</span></td><td data-v="${Date.parse(i.at) || 0}">${fmt(i.at)}</td><td data-v="${i.number}"><a href="${esc(i.url)}" target="_blank" rel="noopener">#${i.number}</a></td><td>${esc(i.title)}</td><td><span class="pill ${i.state === "open" ? "warn" : i.state === "merged" ? "ok" : ""}">${esc(i.state)}</span></td><td data-v="${Date.parse(i.merged) || 0}">${i.state === "merged" ? "Yes" + (i.merged ? " · " + fmt(i.merged) : "") : "No"}</td><td data-v="${Date.parse(push[i.k]) || 0}">${push[i.k] ? fmt(push[i.k]) : ""}</td><td class="${i.state === "open" ? "warn" : "meta"}">${need[i.state] || ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="meta">No pull requests yet.</div>`}</div>`;
   const deployBox = `<div class="box" style="grid-column:1/-1"><h3>Deployment</h3><div class="tbl"><table><tr><th>Project</th><th>Latest staging deployment</th><th>Latest production deployment</th></tr>${dep}</table></div></div>`;
   el.innerHTML = `<div class="lists">${box("prs", "PRs to merge", L.prs, "No open pull requests.", "warn")}${box("errors", "Deployment errors", L.errors, "No failed deployments.", "bad", true)}${box("staging", "Needs staging deployment", L.staging, "Staging has the latest commit everywhere.", "warn", true)}${box("needs", "Needs production deployment", L.needs, "Production is up to date everywhere.", "warn", true)}${deployBox}${prBox}</div>`;
-  applyPF();
+  stdApply("prs"); applyPF();
 }
 const PF = { k: [], n: [], t: "", m: [], s: [], from: "", to: "", all: false }, PR_SHOW = 30;
 // Newest 30 are shown; any filter (or "Show all") searches every PR the dashboard loaded (up to 100 per project).
