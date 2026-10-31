@@ -40,6 +40,7 @@ a{color:var(--accent)}
 .plain{background:var(--chip);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;margin:6px 0;white-space:pre-wrap}.plain b{color:var(--ink)}
 .asktext{white-space:pre-wrap;word-break:break-word;margin-top:4px}
 .msel{position:relative}.msel>summary{cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:3px 10px;background:var(--card)}.mpanel{position:absolute;z-index:5;margin-top:4px;max-height:260px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:4px;min-width:170px}.mpanel label{white-space:nowrap;cursor:pointer}
+body.site [data-jump="commit"],body.site [data-jump="unpushed"],body.site #auto{display:none}
 .opt{font:inherit;border:1px solid var(--accent);background:var(--card);color:var(--accent);padding:4px 12px;border-radius:8px;cursor:pointer}
 .joblog{max-height:320px;overflow:auto;background:var(--chip);border-radius:8px;padding:10px;margin:0 0 10px}
 textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
@@ -165,16 +166,20 @@ const saveMuted = () => { try { localStorage.setItem(MUTE_KEY, JSON.stringify(MU
 let view = "messages", msgTab = "claude", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
+// The read-only website (built by the publish-site Action): GitHub data only. Nothing that needs the PC or changes anything is shown.
+const SITE = !!DATA.site;
+document.body.classList.toggle("site", SITE);
 const AUTO_KEY = "projdash-auto";
 const getAuto = () => { try { return localStorage.getItem(AUTO_KEY) || "0"; } catch { return "0"; } };
 $("#gen").innerHTML = `<span id="stamp"></span> <select id="auto" aria-label="Auto refresh"><option value="0">Auto-refresh off</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select><button id="refresh" class="rbtn">Refresh now</button>`;
 const stamp = (t) => { $("#stamp").textContent = t; };
-const pulled = () => DATA.generatedAt ? "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ")." : "Loading project data...";
+const pulled = () => DATA.generatedAt ? "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ")." + (DATA.site ? " Read-only website, updated about every 30 minutes." : "") : "Loading project data...";
 stamp(pulled());
 const offline = "The dashboard server isn't running, so the data can't be updated.\nWhat to do: double-click refresh.cmd (or update.cmd) in the project-dashboard folder, then try again.";
 // Refresh asks the server to collect again and returns at once with the run that will hold the new data;
 // watchBuild() then fills in each project as it arrives.
 async function refresh() {
+  if (SITE) { location.reload(); return; } // the website is rebuilt by GitHub every 30 minutes; this loads the newest copy
   if (location.protocol !== "http:") { location.href = SERVER; return; } // a file copy moves to the live page
   const b = $("#refresh");
   b.disabled = true; b.textContent = "Refreshing...";
@@ -196,7 +201,7 @@ $("#refresh").onclick = () => { for (const k of Object.keys(gitNote)) if (gitNot
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
-function scheduleAuto() { clearTimeout(autoT); if (getAuto() !== "0" && location.protocol === "http:") autoT = setTimeout(refresh, Number(getAuto()) * 60000); }
+function scheduleAuto() { clearTimeout(autoT); if (SITE) { autoT = setTimeout(() => location.reload(), 15 * 60000); return; } if (getAuto() !== "0" && location.protocol === "http:") autoT = setTimeout(refresh, Number(getAuto()) * 60000); }
 
 // Progressive loading: the server collects a few projects at a time and hands each over as soon as it is ready.
 // Each one replaces its card straight away; the action plan is worked out once every project is in.
@@ -332,6 +337,7 @@ const gitBusy = {}, gitNote = {};
 // A row of two dropdowns under each card: Git (left; left out when nothing needs you) and Deployments (right; for projects
 // that have deploy workflows). A result message from either shows underneath.
 function gitButtons(p, c, showSelect = true) {
+  if (SITE) return "";
   const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
   const n0 = gitNote[p.key], note = n0?.deploy && n0.bad && (p.remote?.deploys || []).some((x) => x.state === "success" && Date.parse(x.at) > n0.at) ? null : n0, g = p.git, dep = p.remote?.deployWorkflows || (p.remote?.deploys || []).map((x) => x.workflow);
   const has = (re) => dep.some((x) => re.test(x));
@@ -505,7 +511,7 @@ async function poll() {
 
 // Reply boxes. Ctrl+Enter sends; the box's button says where the text goes.
 let boxN = 0;
-const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" style="white-space:pre-wrap" data-msg="${id}"></div>`; };
+const replyBox = (attrs, placeholder, label = "Send") => { if (SITE) return ""; const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" style="white-space:pre-wrap" data-msg="${id}"></div>`; };
 document.addEventListener("keydown", (e) => { if (e.target.tagName === "TEXTAREA" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.target.closest(".tools")?.querySelector("button.send")?.click(); });
 document.addEventListener("click", async (e) => {
   const opt = e.target.closest("[data-pick]");
@@ -693,7 +699,7 @@ function planBlock(p) {
   if (!planReady) return building ? `<div class="cplan meta">Checking what needs you...</div>` : "";
   const all = Object.values(plan).filter((i) => i.key === p.key), open = all.filter((i) => i.open && !i.ticked).sort((a, b) => a.pri - b.pri || a.order - b.order),
     shut = all.filter((i) => !i.open || i.ticked).sort((a, b) => (b.doneAt || b.tickedAt || 0) - (a.doneAt || a.tickedAt || 0));
-  const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
+  const closeBtn = (i) => !SITE && i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
   const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
@@ -720,7 +726,7 @@ function fullView(p) {
   const [label, cls] = status(p), job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
   return `<div class="fbar">
       <div class="grow"><h2 id="ftitle">${esc(p.key)} <span class="pill ${cls}">${label}</span> <span id="jobbadge">${badge(p.key)}</span></h2><div class="sub">${esc(p.name)} · <code>${esc(p.dir)}</code>${p.remote.url ? ` · <a href="${p.remote.url}" target="_blank" rel="noopener">GitHub</a>` : ""}</div></div>
-      ${CMDS[p.key] && !busy ? `<button class="rbtn" style="margin:0" data-act="checkpoint">Checkpoint</button>` : ""}<span class="sub" id="cpmsg"></span>
+      ${!SITE && CMDS[p.key] && !busy ? `<button class="rbtn" style="margin:0" data-act="checkpoint">Checkpoint</button>` : ""}<span class="sub" id="cpmsg"></span>
       <div class="seg" role="group" aria-label="View"><button data-view="messages" aria-pressed="${view === "messages"}">Messages</button><button data-view="details" aria-pressed="${view === "details"}">Details</button></div>
       <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
       <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>

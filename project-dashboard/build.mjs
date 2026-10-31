@@ -4,13 +4,18 @@
 // "@@project <json>" line, so serve.mjs can hand it to the page straight away, before the whole build is done.
 // Usage: node project-dashboard/build.mjs [--open]
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { OWNER, PROJECTS, claudeSessions, collectSearch, winDir } from "./projects.mjs";
 
+// --site <folder>: build the read-only website instead (used by the publish-site GitHub Action). Only GitHub data is collected (no
+// local git, no Claude sessions), the page is written to <folder>/index.html, and nothing about the data is printed: Action logs
+// of a public repo are public.
+const siteDir = process.argv.includes("--site") ? process.argv[process.argv.indexOf("--site") + 1] : "";
+if (siteDir) console.log = () => {};
 const run = (cmd, args, cwd) => new Promise((resolve, reject) => execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20, windowsHide: true },
   (err, out, errOut) => (err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out))));
 const attempt = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
@@ -137,7 +142,15 @@ async function branchPr(repo, branch) {
   return pr ? { number: pr.number, title: pr.title, url: pr.url, state: pr.isDraft && pr.state === "OPEN" ? "draft" : pr.state.toLowerCase() } : null;
 }
 
+async function collectSite(p) { // the website has no access to the PC: GitHub data only, with a placeholder for the local git state
+  const rem = await remote(p), c = (rem.activity || []).find((i) => i.type === "commit");
+  const out = { key: p.key, group: p.group, name: p.name, dir: p.repo ? `GitHub: ${OWNER}/${p.repo}` : p.dir, cmd: null, remote: rem, doc: null, sessions: [], branchPr: null, updatedAt: new Date().toISOString(),
+    git: { branch: "main", files: [], unpushed: [], ahead: 0, behind: 0, stashes: 0, upstream: "origin/main", last: { hash: c?.sha || "", subject: c?.title || "", date: c?.at || new Date().toISOString() } } };
+  console.log("@@project " + JSON.stringify(out));
+  return out;
+}
 async function collect(p) {
+  if (siteDir) return collectSite(p);
   const out = { key: p.key, group: p.group, name: p.name, dir: winDir(p.dir), cmd: p.cmd || null };
   const [g, rem] = await Promise.all([gitState(p.dir).catch((e) => { out.error = String(e.message).slice(0, 300); return null; }), remote(p)]);
   if (g) out.git = g;
@@ -160,12 +173,18 @@ const searchTask = (async () => {
 })();
 await Promise.all(Array.from({ length: 4 }, async () => { while (next < PROJECTS.length) { const i = next++; results[i] = await collect(PROJECTS[i]); } }));
 const search = await searchTask;
-const data = { generatedAt: new Date().toISOString(), projects: results, search };
+const data = { generatedAt: new Date().toISOString(), projects: results, search, ...(siteDir ? { site: true } : {}) };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "page-template.html"), "utf8").replace("/*__DATA__*/null", () => JSON.stringify(data).replace(/</g, "\\u003c"));
 // A saved copy of the page. It goes in the temp folder, not here: this folder is a git repository, and a file rewritten on
 // every refresh would make the project look uncommitted again right after each commit.
+if (siteDir) {
+  mkdirSync(siteDir, { recursive: true });
+  writeFileSync(join(siteDir, "index.html"), html, "utf8");
+  process.stdout.write(`Wrote the site page for ${data.projects.length} projects.\n`);
+  process.exit(0);
+}
 const outFile = join(tmpdir(), "bwe-dashboard.html");
 writeFileSync(outFile, html, "utf8");
 console.log(`Wrote ${outFile}`);
