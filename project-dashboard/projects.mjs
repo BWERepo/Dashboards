@@ -173,7 +173,10 @@ async function indexedHistory(repo) {
     const s = await tryJson(() => raw(repo, "state.json", c.sha));
     if (!s) return null;
     const v = Object.values(s.urls || {}).map((r) => r.google?.verdict);
-    return { at: c.at, indexed: v.filter((x) => x === "PASS").length, notIndexed: v.filter((x) => x && x !== "PASS").length, total: v.length };
+    // The request queue as of that day: unindexed pages not listed for a manual request in the 7 days before it.
+    const day = Date.parse(c.at.slice(0, 10)), un = Object.values(s.urls || {}).filter((r) => r.google?.verdict && r.google.verdict !== "PASS");
+    const doneN = un.filter((r) => r.listedOn && day - Date.parse(r.listedOn) < 7 * 864e5 && Date.parse(r.listedOn) <= day + 864e5).length;
+    return { at: c.at, indexed: v.filter((x) => x === "PASS").length, notIndexed: v.filter((x) => x && x !== "PASS").length, total: v.length, queueDone: doneN, queueRemaining: un.length - doneN };
   }));
   return points.filter(Boolean).reverse(); // oldest first
 }

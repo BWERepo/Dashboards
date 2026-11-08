@@ -919,9 +919,10 @@ function queueBox() {
   const rows = SITES().filter((s) => s.setUp && s.state).map((s) => ({ s, q: queueOf(s) }));
   if (!rows.length) return "";
   const tot = rows.reduce((a, r) => ({ total: a.total + r.q.total, done: a.done + r.q.done, remaining: a.remaining + r.q.remaining }), { total: 0, done: 0, remaining: 0 });
+  const series = rows.map(({ s }) => ({ name: s.name, points: (s.history || []).filter((h) => h.queueRemaining != null).map((h) => ({ at: h.at, v: h.queueRemaining })) })).filter((x) => x.points.length);
   return `<h3>Search Console request queue</h3><div class="sub">Unindexed pages waiting for a manual "Request indexing" (about ${QUEUE_PER_DAY} a day per site). Done = listed in the last 7 days. Total remaining: <b>${tot.remaining}</b>, about <b>${Math.ceil(Math.max(...rows.map((r) => r.q.days)))} days</b> at ${QUEUE_PER_DAY} a day per site.</div>
   <div class="tbl"><table><tr><th>Site</th><th>Total</th><th>Done</th><th>Remaining</th><th>Days left</th><th>Next in line</th></tr>${rows.map(({ s, q }) => `<tr><td>${esc(s.name)}</td><td>${q.total}</td><td>${q.done}</td><td><b class="${q.remaining ? "warn" : "ok"}">${q.remaining}</b></td><td>${q.days}</td><td class="url">${q.next ? `<a href="${esc(q.next)}" target="_blank" rel="noopener">${esc(host(q.next))}</a>` : "-"}</td></tr>`).join("")}
-  <tr><td><b>All sites</b></td><td><b>${tot.total}</b></td><td><b>${tot.done}</b></td><td><b>${tot.remaining}</b></td><td></td><td></td></tr></table></div>`;
+  <tr><td><b>All sites</b></td><td><b>${tot.total}</b></td><td><b>${tot.done}</b></td><td><b>${tot.remaining}</b></td><td></td><td></td></tr></table></div>${series.length ? `<h4 style="margin:14px 0 4px">Remaining in the queue, day by day</h4>${lineChart(series)}` : ""}`;
 }
 function sOverview() {
   const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, idx: (s.history || []).find((h) => h.at.slice(0, 10) === r.date), ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
