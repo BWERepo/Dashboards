@@ -842,7 +842,7 @@ function sCards() {
     return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
       <div class="big ${cls}">${esc(label)}</div>
       <div class="sub">${esc(runNote(s))}</div>
-      ${s.setUp ? `<div class="sub">Last daily run ${ago(s.lastRun?.createdAt)}${s.state ? "<br>" + gscNote(s) : ""}</div>` : ""}
+      ${s.setUp ? `<div class="sub">Last daily run ${ago(s.lastRun?.createdAt)}${s.state ? "<br>" + gscNote(s) + "<br>Index request queue: " + queueOf(s).remaining + " remaining" : ""}</div>` : ""}
       ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
       ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
     </div>`;
@@ -905,10 +905,28 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("input", (e) => { const bar = e.target.closest("[data-stdbar]"); if (!bar) return; const id = bar.dataset.stdbar, S = STD[id]; if (e.target.matches("[data-stdq]")) S.q = e.target.value; else if (e.target.dataset.stdd) S[e.target.dataset.stdd] = e.target.value; else return; stdApply(id); });
 document.addEventListener("change", (e) => { const i = e.target.dataset?.stdf, bar = e.target.closest("[data-stdbar]"); if (i == null || !bar) return; const id = bar.dataset.stdbar, S = STD[id]; S.f[i] = [...bar.querySelectorAll(`[data-stdf="${i}"]:checked`)].map((x) => x.value); const m = e.target.closest("details").querySelector("summary .meta"); if (m) m.textContent = S.f[i].length ? " (" + S.f[i].length + ")" : ""; stdApply(id); });
+// The request-indexing queue, worked out from each site's monitor state: unindexed pages Google knows are the queue; a page the daily
+// report listed for a manual "Request indexing" in the last 7 days counts as done (the monitor skips it for 7 days); the rest are
+// remaining, newest page first. About 10 can be requested a day.
+const QUEUE_PER_DAY = 10;
+function queueOf(s) {
+  const pages = (s.state?.pages || []).filter((x) => x.verdict && x.verdict !== "PASS"), now = Date.now();
+  const done = pages.filter((x) => x.listedOn && now - Date.parse(x.listedOn) < 7 * 864e5);
+  const rest = pages.filter((x) => !done.includes(x)).sort((a, b) => (b.firstSeen || "").localeCompare(a.firstSeen || ""));
+  return { total: pages.length, done: done.length, remaining: rest.length, next: rest[0]?.url || "", days: Math.ceil(rest.length / QUEUE_PER_DAY) };
+}
+function queueBox() {
+  const rows = SITES().filter((s) => s.setUp && s.state).map((s) => ({ s, q: queueOf(s) }));
+  if (!rows.length) return "";
+  const tot = rows.reduce((a, r) => ({ total: a.total + r.q.total, done: a.done + r.q.done, remaining: a.remaining + r.q.remaining }), { total: 0, done: 0, remaining: 0 });
+  return `<h3>Search Console request queue</h3><div class="sub">Unindexed pages waiting for a manual "Request indexing" (about ${QUEUE_PER_DAY} a day per site). Done = listed in the last 7 days. Total remaining: <b>${tot.remaining}</b>, about <b>${Math.ceil(Math.max(...rows.map((r) => r.q.days)))} days</b> at ${QUEUE_PER_DAY} a day per site.</div>
+  <div class="tbl"><table><tr><th>Site</th><th>Total</th><th>Done</th><th>Remaining</th><th>Days left</th><th>Next in line</th></tr>${rows.map(({ s, q }) => `<tr><td>${esc(s.name)}</td><td>${q.total}</td><td>${q.done}</td><td><b class="${q.remaining ? "warn" : "ok"}">${q.remaining}</b></td><td>${q.days}</td><td class="url">${q.next ? `<a href="${esc(q.next)}" target="_blank" rel="noopener">${esc(host(q.next))}</a>` : "-"}</td></tr>`).join("")}
+  <tr><td><b>All sites</b></td><td><b>${tot.total}</b></td><td><b>${tot.done}</b></td><td><b>${tot.remaining}</b></td><td></td><td></td></tr></table></div>`;
+}
 function sOverview() {
   const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, idx: (s.history || []).find((h) => h.at.slice(0, 10) === r.date), ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
   const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? stdTable("daily", [{ h: "Date", date: true }, { h: "Site", f: true }, { h: "Sitemap" }, { h: "Checked" }, { h: "New" }, { h: "Indexed" }, { h: "Open findings" }, { h: "Google", f: true }],
+  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}${queueBox()}<h3>Recent daily results, all sites</h3>` + (rows.length ? stdTable("daily", [{ h: "Date", date: true }, { h: "Site", f: true }, { h: "Sitemap" }, { h: "Checked" }, { h: "New" }, { h: "Indexed" }, { h: "Open findings" }, { h: "Google", f: true }],
       rows.map((r) => [{ t: r.date }, { t: r.site }, { t: String(r.sitemap ?? "-") }, { t: String(r.checked ?? "-") }, { t: String(r.fresh ?? "-") },
         r.idx ? { t: String(r.idx.indexed), html: `<b class="ok">${r.idx.indexed}</b> of ${r.idx.total}` } : { t: "-", v: "-1" }, { t: String(r.open ?? "-") }, { t: r.google }])) : `<div class="empty">No daily reports yet.</div>`) +
     `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);

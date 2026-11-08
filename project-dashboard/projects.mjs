@@ -152,7 +152,7 @@ async function collectSite({ repo, name }) {
     const pages = urls.map(([u, r]) => {
       const g = r.google?.verdict;
       if (g === "PASS") verdict.indexed++; else if (g) verdict.notIndexed++; else verdict.unknown++;
-      return { url: u, firstSeen: r.firstSeen, lastChecked: r.lastChecked, verdict: g || "", coverage: r.google?.coverage || "",
+      return { url: u, firstSeen: r.firstSeen, lastChecked: r.lastChecked, listedOn: r.listedOn || "", verdict: g || "", coverage: r.google?.coverage || "",
         lastCrawl: r.google?.lastCrawl || "", findings: (r.findings || []).map((f) => ({ kind: f.kind, severity: f.severity, detail: f.detail || f.message || "" })) };
     });
     site.state = { total: urls.length, ...verdict, lastDaily: state.lastDaily || null, pages };
