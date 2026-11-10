@@ -40,6 +40,7 @@ a{color:var(--accent)}
 .plain{background:var(--chip);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;margin:6px 0;white-space:pre-wrap}.plain b{color:var(--ink)}
 .asktext{white-space:pre-wrap;word-break:break-word;margin-top:4px}
 .msel{position:relative}.msel>summary{cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:3px 10px;background:var(--card)}.mpanel{position:absolute;z-index:5;margin-top:4px;max-height:260px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:4px;min-width:170px}.mpanel label{white-space:nowrap;cursor:pointer}
+body.site [data-jump="commit"],body.site [data-jump="unpushed"],body.site #auto{display:none}
 .opt{font:inherit;border:1px solid var(--accent);background:var(--card);color:var(--accent);padding:4px 12px;border-radius:8px;cursor:pointer}
 .joblog{max-height:320px;overflow:auto;background:var(--chip);border-radius:8px;padding:10px;margin:0 0 10px}
 textarea{flex:1;min-width:220px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
@@ -109,6 +110,7 @@ body.locked{overflow:hidden}
 .stools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.stools input,.stools select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}.stools input{flex:1;min-width:200px}
 td.url{word-break:break-all}.tbl{overflow-x:auto}
 .lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:0 0 20px}.lists .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.lists h3{margin:0 0 6px;font-size:15px}.lists ul{list-style:none;margin:0;padding:0}.lists li{padding:5px 0;border-top:1px solid var(--line);font-size:14px}.lists li:first-child{border-top:0}.lists .k{font-weight:600;cursor:pointer}
+.unm{margin:8px 0 0;font-size:12px;line-height:1.35}.unm>div:first-child{color:var(--mute)}.unm ul{margin:2px 0 0;padding-left:16px}.unm li{margin:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .last{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;margin:8px 0 0;font-size:12px;line-height:1.35}.last span:nth-child(odd){color:var(--mute)}
 .cplan{margin:8px 0 0;border-top:1px solid var(--line);padding-top:6px;font-size:13px}.cplan ul{list-style:none;margin:4px 0 0;padding:0}.cplan li{margin:5px 0}.cplan li .meta{display:block;margin:0 0 0 22px}.cplan li.done label{text-decoration:line-through;color:var(--mute)}.cplan input{margin:0 6px 0 0;vertical-align:-2px}.cplan li label,.cplan li .meta,.cplan li label a{color:var(--warn)}.cplan li label a{text-decoration:underline}.cplan li.done label,.cplan li.done .meta,.cplan li.done label a{color:var(--mute)}.cplan .ibtn{margin:3px 4px 0 22px;padding:1px 10px;font-size:12px}.cplan .ibtn+.ibtn{margin-left:0}
 .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 16px}
@@ -165,16 +167,20 @@ const saveMuted = () => { try { localStorage.setItem(MUTE_KEY, JSON.stringify(MU
 let view = "messages", msgTab = "claude", ghFilter = "attention", showTools = false;
 
 const SERVER = "http://127.0.0.1:8788";
+// The read-only website (built by the publish-site Action): GitHub data only. Nothing that needs the PC or changes anything is shown.
+const SITE = !!DATA.site;
+document.body.classList.toggle("site", SITE);
 const AUTO_KEY = "projdash-auto";
 const getAuto = () => { try { return localStorage.getItem(AUTO_KEY) || "0"; } catch { return "0"; } };
 $("#gen").innerHTML = `<span id="stamp"></span> <select id="auto" aria-label="Auto refresh"><option value="0">Auto-refresh off</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select><button id="refresh" class="rbtn">Refresh now</button>`;
 const stamp = (t) => { $("#stamp").textContent = t; };
-const pulled = () => DATA.generatedAt ? "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ")." : "Loading project data...";
+const pulled = () => DATA.generatedAt ? "Data pulled " + fmt(DATA.generatedAt) + " (" + ago(DATA.generatedAt) + ")." + (DATA.site ? " Read-only website, updated about every 30 minutes." : "") : "Loading project data...";
 stamp(pulled());
 const offline = "The dashboard server isn't running, so the data can't be updated.\nWhat to do: double-click refresh.cmd (or update.cmd) in the project-dashboard folder, then try again.";
 // Refresh asks the server to collect again and returns at once with the run that will hold the new data;
 // watchBuild() then fills in each project as it arrives.
 async function refresh() {
+  if (SITE) { location.reload(); return; } // the website is rebuilt by GitHub every 30 minutes; this loads the newest copy
   if (location.protocol !== "http:") { location.href = SERVER; return; } // a file copy moves to the live page
   const b = $("#refresh");
   b.disabled = true; b.textContent = "Refreshing...";
@@ -196,7 +202,7 @@ $("#refresh").onclick = () => { for (const k of Object.keys(gitNote)) if (gitNot
 $("#auto").value = getAuto();
 $("#auto").onchange = (e) => { try { localStorage.setItem(AUTO_KEY, e.target.value); } catch {} scheduleAuto(); };
 let autoT = 0;
-function scheduleAuto() { clearTimeout(autoT); if (getAuto() !== "0" && location.protocol === "http:") autoT = setTimeout(refresh, Number(getAuto()) * 60000); }
+function scheduleAuto() { clearTimeout(autoT); if (SITE) { autoT = setTimeout(() => location.reload(), 15 * 60000); return; } if (getAuto() !== "0" && location.protocol === "http:") autoT = setTimeout(refresh, Number(getAuto()) * 60000); }
 
 // Progressive loading: the server collects a few projects at a time and hands each over as soon as it is ready.
 // Each one replaces its card straight away; the action plan is worked out once every project is in.
@@ -294,6 +300,12 @@ function lastBlock(p) {
   const sig = mp ? mp.number + "|" + (mp.merged || mp.at) : "", late = (k) => k === "PR" && d.length && okAt && mp && Date.parse(mp.merged || mp.at) > okAt && FLAGX[p.key] !== sig; // closed flags come back when a newer PR is merged
   return `<div class="last" title="Most recent of each">${rows.map(([k, v]) => late(k) ? `<span class="warn">${k}</span><span>${v} <span class="warn">&#9888; merged after last deployment</span> <button class="ibtn" style="padding:0 6px" data-flagx="${esc(p.key)}" data-sig="${esc(sig)}" title="Close this message">&#10005;</button></span>` : `<span>${k}</span><span>${v}</span>`).join("")}</div>`;
 }
+// The project's open (not yet merged) pull requests, listed on its card with links: newest first, at most 5, drafts marked.
+function unmergedBlock(p) {
+  const prs = [...p.remote.prs].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), more = prs.length - 5;
+  if (!prs.length) return `<div class="unm"><div>Unmerged PRs: none</div></div>`;
+  return `<div class="unm"><div>Unmerged PRs (${prs.length})</div><ul>${prs.slice(0, 5).map((x) => `<li title="#${x.number} ${esc(x.title)}${x.isDraft ? " (draft)" : ""} · updated ${ago(x.updatedAt)}"><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number}</a> ${x.isDraft ? `<span class="pill">draft</span> ` : ""}${esc(x.title)}</li>`).join("")}</ul>${more > 0 ? `<div class="jump" data-jump="prs" title="See all open pull requests" style="cursor:pointer;text-decoration:underline">+${more} more</div>` : ""}</div>`;
+}
 function cards() {
   $("#cards").innerHTML = inGroup().map((p) => {
     const [label, cls] = status(p), c = counts(p);
@@ -305,7 +317,8 @@ function cards() {
     return `<div class="card pick" tabindex="0" role="button" data-open="${esc(p.key)}" aria-label="Open ${esc(p.key)} full screen"><h2>${esc(p.key)}</h2><div class="sub">${esc(p.name)}</div>
       <div class="big ${cls}">${label}</div>${b ? `<div>${b}</div>` : ""}
       <div class="sub">${p.git ? esc(p.git.branch) + " · last commit " + ago(p.git.last.date) : `${esc(folderProblem(p)[0])} <b>What to do:</b> ${esc(folderProblem(p)[1])}`}</div>
-      <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b>${c.prs}</b><small>Open PRs</small></div></div>
+      <div class="row"><div class="jump" data-jump="commit" title="See the files"><b class="${c.uncommitted ? "warn" : ""}">${c.uncommitted}</b><small>To commit</small></div>${diverged(p) ? `<div class="jump" data-jump="unpushed" title="Local and remote have split. See the commits"><b class="warn">+${p.git.ahead}/-${p.git.behind}</b><small>Diverged</small></div>` : p.git?.behind ? `<div title="GitHub has ${p.git.behind} newer commit(s). Pick Pull in the Git dropdown."><b class="warn">-${p.git.behind}</b><small>To pull</small></div>` : `<div class="jump" data-jump="unpushed" title="See the commits"><b class="${c.unpushed ? "warn" : ""}">${c.unpushed}</b><small>To push</small></div>`}<div class="jump" data-jump="issues" title="See the issues"><b class="${c.issues ? "warn" : ""}">${c.issues}</b><small>Issues</small></div><div class="jump" data-jump="prs" title="See the pull requests"><b class="${p.remote.prs.some((x) => !x.isDraft) ? "warn" : ""}">${c.prs}</b><small>Unmerged PRs</small></div></div>
+      ${unmergedBlock(p)}
       ${lastBlock(p)}
       ${planBlock(p)}
       ${waiting ? `<button class="rbtn" style="margin:8px 0 0;width:100%;background:var(--bad);border-color:var(--bad)" data-open="${esc(p.key)}" data-answer="1">Answer Claude</button>` : ""}
@@ -332,6 +345,7 @@ const gitBusy = {}, gitNote = {};
 // A row of two dropdowns under each card: Git (left; left out when nothing needs you) and Deployments (right; for projects
 // that have deploy workflows). A result message from either shows underneath.
 function gitButtons(p, c, showSelect = true) {
+  if (SITE) return "";
   const opt = (act, label, why) => `<option value="${act}" ${why ? "disabled" : ""}>${label}${why ? ` (${esc(why)})` : ""}</option>`;
   const n0 = gitNote[p.key], note = n0?.deploy && n0.bad && (p.remote?.deploys || []).some((x) => x.state === "success" && Date.parse(x.at) > n0.at) ? null : n0, g = p.git, dep = p.remote?.deployWorkflows || (p.remote?.deploys || []).map((x) => x.workflow);
   const has = (re) => dep.some((x) => re.test(x));
@@ -505,7 +519,7 @@ async function poll() {
 
 // Reply boxes. Ctrl+Enter sends; the box's button says where the text goes.
 let boxN = 0;
-const replyBox = (attrs, placeholder, label = "Send") => { const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" style="white-space:pre-wrap" data-msg="${id}"></div>`; };
+const replyBox = (attrs, placeholder, label = "Send") => { if (SITE) return ""; const id = "box" + ++boxN; return `<div class="tools"><textarea id="${id}" rows="2" placeholder="${esc(placeholder)} (Ctrl+Enter to send)"></textarea><button class="rbtn send" style="margin:0" data-box="${id}" ${attrs}>${label}</button></div><div class="note bad" style="white-space:pre-wrap" data-msg="${id}"></div>`; };
 document.addEventListener("keydown", (e) => { if (e.target.tagName === "TEXTAREA" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.target.closest(".tools")?.querySelector("button.send")?.click(); });
 document.addEventListener("click", async (e) => {
   const opt = e.target.closest("[data-pick]");
@@ -693,7 +707,7 @@ function planBlock(p) {
   if (!planReady) return building ? `<div class="cplan meta">Checking what needs you...</div>` : "";
   const all = Object.values(plan).filter((i) => i.key === p.key), open = all.filter((i) => i.open && !i.ticked).sort((a, b) => a.pri - b.pri || a.order - b.order),
     shut = all.filter((i) => !i.open || i.ticked).sort((a, b) => (b.doneAt || b.tickedAt || 0) - (a.doneAt || a.tickedAt || 0));
-  const closeBtn = (i) => i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
+  const closeBtn = (i) => !SITE && i.btn2 && !i.ticked ? `<button class="ibtn" ${i.btn2.issue ? "data-close-issue" : "data-close-pr"}="${i.btn2.number}" data-key="${esc(i.key)}">${i.btn2.issue ? "Close issue" : "Close PR"}</button>` : "";
   const button = (i) => closeBtn(i) + (!i.btn || i.ticked ? "" : i.btn.url ? `<a class="ibtn" style="text-decoration:none" href="${esc(i.btn.url)}" target="_blank" rel="noopener">${esc(i.btn.label)}</a>`
     : i.btn.git ? `<button class="ibtn" data-plan-git="${esc(i.btn.git)}" data-key="${esc(i.key)}" ${gitBusy[i.key] ? "disabled" : ""}>${esc(i.btn.label)}</button>`
     : `<button class="ibtn" data-plan-open="${esc(i.key)}" data-jump="${esc(i.btn.open)}">${esc(i.btn.label)}</button>`);
@@ -720,7 +734,7 @@ function fullView(p) {
   const [label, cls] = status(p), job = JOBS[p.key], busy = job?.status === "running" || job?.status === "waiting";
   return `<div class="fbar">
       <div class="grow"><h2 id="ftitle">${esc(p.key)} <span class="pill ${cls}">${label}</span> <span id="jobbadge">${badge(p.key)}</span></h2><div class="sub">${esc(p.name)} · <code>${esc(p.dir)}</code>${p.remote.url ? ` · <a href="${p.remote.url}" target="_blank" rel="noopener">GitHub</a>` : ""}</div></div>
-      ${CMDS[p.key] && !busy ? `<button class="rbtn" style="margin:0" data-act="checkpoint">Checkpoint</button>` : ""}<span class="sub" id="cpmsg"></span>
+      ${!SITE && CMDS[p.key] && !busy ? `<button class="rbtn" style="margin:0" data-act="checkpoint">Checkpoint</button>` : ""}<span class="sub" id="cpmsg"></span>
       <div class="seg" role="group" aria-label="View"><button data-view="messages" aria-pressed="${view === "messages"}">Messages</button><button data-view="details" aria-pressed="${view === "details"}">Details</button></div>
       <button class="ibtn" data-act="fs" title="Browser full screen">${document.fullscreenElement ? "Exit full screen" : "Full screen"}</button>
       <button class="ibtn" data-act="close" title="Close (Esc)">&#10005; Close</button>
@@ -828,7 +842,7 @@ function sCards() {
     return `<div class="card pick" tabindex="0" role="button" data-sopen="${esc(s.repo)}"><h2>${esc(s.name)}</h2>
       <div class="big ${cls}">${esc(label)}</div>
       <div class="sub">${esc(runNote(s))}</div>
-      ${s.setUp ? `<div class="sub">Last daily run ${ago(s.lastRun?.createdAt)}${s.state ? "<br>" + gscNote(s) : ""}</div>` : ""}
+      ${s.setUp ? `<div class="sub">Last daily run ${ago(s.lastRun?.createdAt)}${s.state ? "<br>" + gscNote(s) + "<br>Index request queue: " + queueOf(s).remaining + " remaining" : ""}</div>` : ""}
       ${st ? `<div class="row"><div><b>${st.total}</b><small>URLs tracked</small></div><div><b class="ok">${st.indexed}</b><small>Indexed</small></div><div><b class="${st.notIndexed ? "bad" : ""}">${st.notIndexed}</b><small>Not indexed</small></div><div><b>${d?.fresh ?? "-"}</b><small>New today</small></div></div>` : ""}
       ${hist.length > 1 ? `<div class="spark" title="Open findings per daily run">${hist.map((r) => `<i style="height:${Math.max(6, r.open / max * 100)}%" title="${r.date}: ${r.open}"></i>`).join("")}</div>` : ""}
     </div>`;
@@ -891,10 +905,29 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("input", (e) => { const bar = e.target.closest("[data-stdbar]"); if (!bar) return; const id = bar.dataset.stdbar, S = STD[id]; if (e.target.matches("[data-stdq]")) S.q = e.target.value; else if (e.target.dataset.stdd) S[e.target.dataset.stdd] = e.target.value; else return; stdApply(id); });
 document.addEventListener("change", (e) => { const i = e.target.dataset?.stdf, bar = e.target.closest("[data-stdbar]"); if (i == null || !bar) return; const id = bar.dataset.stdbar, S = STD[id]; S.f[i] = [...bar.querySelectorAll(`[data-stdf="${i}"]:checked`)].map((x) => x.value); const m = e.target.closest("details").querySelector("summary .meta"); if (m) m.textContent = S.f[i].length ? " (" + S.f[i].length + ")" : ""; stdApply(id); });
+// The request-indexing queue, worked out from each site's monitor state: unindexed pages Google knows are the queue; a page the daily
+// report listed for a manual "Request indexing" in the last 7 days counts as done (the monitor skips it for 7 days); the rest are
+// remaining, newest page first. About 10 can be requested a day.
+const QUEUE_PER_DAY = 10;
+function queueOf(s) {
+  const pages = (s.state?.pages || []).filter((x) => x.verdict && x.verdict !== "PASS"), now = Date.now();
+  const done = pages.filter((x) => x.listedOn && now - Date.parse(x.listedOn) < 7 * 864e5);
+  const rest = pages.filter((x) => !done.includes(x)).sort((a, b) => (b.firstSeen || "").localeCompare(a.firstSeen || ""));
+  return { total: pages.length, done: done.length, remaining: rest.length, next: rest[0]?.url || "", days: Math.ceil(rest.length / QUEUE_PER_DAY) };
+}
+function queueBox() {
+  const rows = SITES().filter((s) => s.setUp && s.state).map((s) => ({ s, q: queueOf(s) }));
+  if (!rows.length) return "";
+  const tot = rows.reduce((a, r) => ({ total: a.total + r.q.total, done: a.done + r.q.done, remaining: a.remaining + r.q.remaining }), { total: 0, done: 0, remaining: 0 });
+  const series = rows.map(({ s }) => ({ name: s.name, points: (s.history || []).filter((h) => h.queueRemaining != null).map((h) => ({ at: h.at, v: h.queueRemaining })) })).filter((x) => x.points.length);
+  return `<h3>Search Console request queue</h3><div class="sub">Unindexed pages waiting for a manual "Request indexing" (about ${QUEUE_PER_DAY} a day per site). Done = listed in the last 7 days. Total remaining: <b>${tot.remaining}</b>, about <b>${Math.ceil(Math.max(...rows.map((r) => r.q.days)))} days</b> at ${QUEUE_PER_DAY} a day per site.</div>
+  <div class="tbl"><table><tr><th>Site</th><th>Total</th><th>Done</th><th>Remaining</th><th>Days left</th><th>Next in line</th></tr>${rows.map(({ s, q }) => `<tr><td>${esc(s.name)}</td><td>${q.total}</td><td>${q.done}</td><td><b class="${q.remaining ? "warn" : "ok"}">${q.remaining}</b></td><td>${q.days}</td><td class="url">${q.next ? `<a href="${esc(q.next)}" target="_blank" rel="noopener">${esc(host(q.next))}</a>` : "-"}</td></tr>`).join("")}
+  <tr><td><b>All sites</b></td><td><b>${tot.total}</b></td><td><b>${tot.done}</b></td><td><b>${tot.remaining}</b></td><td></td><td></td></tr></table></div>${series.length ? `<h4 style="margin:14px 0 4px">Remaining in the queue, day by day</h4>${lineChart(series)}` : ""}`;
+}
 function sOverview() {
   const rows = SITES().flatMap((s) => s.daily.map((r) => ({ site: s.name, idx: (s.history || []).find((h) => h.at.slice(0, 10) === r.date), ...r }))).sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
   const w = SITES().flatMap((s) => s.weekly.map((r) => ({ site: s.name, ...r }))).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}<h3>Recent daily results, all sites</h3>` + (rows.length ? stdTable("daily", [{ h: "Date", date: true }, { h: "Site", f: true }, { h: "Sitemap" }, { h: "Checked" }, { h: "New" }, { h: "Indexed" }, { h: "Open findings" }, { h: "Google", f: true }],
+  return `<h3>Indexed pages over time</h3>${lineChart(SITES().filter((s) => s.setUp).map(idxSeries))}${queueBox()}<h3>Recent daily results, all sites</h3>` + (rows.length ? stdTable("daily", [{ h: "Date", date: true }, { h: "Site", f: true }, { h: "Sitemap" }, { h: "Checked" }, { h: "New" }, { h: "Indexed" }, { h: "Open findings" }, { h: "Google", f: true }],
       rows.map((r) => [{ t: r.date }, { t: r.site }, { t: String(r.sitemap ?? "-") }, { t: String(r.checked ?? "-") }, { t: String(r.fresh ?? "-") },
         r.idx ? { t: String(r.idx.indexed), html: `<b class="ok">${r.idx.indexed}</b> of ${r.idx.total}` } : { t: "-", v: "-1" }, { t: String(r.open ?? "-") }, { t: r.google }])) : `<div class="empty">No daily reports yet.</div>`) +
     `<h3>Weekly reports</h3>` + (w.length ? w.map((r) => `<details><summary>${r.date} - ${esc(r.site)}</summary><pre>${esc(r.md)}</pre></details>`).join("") : `<div class="empty">No weekly reports yet. They post Mondays.</div>`);
